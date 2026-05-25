@@ -5124,18 +5124,18 @@ function _hideLoading(){
   if(el) el.style.display = 'none';
 }
 
-// Charge plusieurs fichiers de lots et les fusionne
+// Charge plusieurs fichiers de lots et les fusionne — version progressive
 async function chargerLots(files){
   const filesSorted = [...files].sort((a,b)=>a.name.localeCompare(b.name));
   const nb = filesSorted.length;
-  _showLoading('Chargement de '+nb+' fichiers...');
 
   const nbActuel = db.arbres.length;
   if(nbActuel > 0){
     _hideLoading();
     if(!confirm('Vous avez '+nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\n— OK : Remplacer\n— Annuler : Fusionner')){
+      _showLoading('Fusion en cours…');
       for(let i=0;i<filesSorted.length;i++){
-        _showLoading('Fusion lot '+(i+1)+'/'+nb+'...');
+        _showProgressLoading('Fusion lot '+(i+1)+'/'+nb, 0, 1, i, nb);
         const text = await filesSorted[i].text();
         const data = JSON.parse(text);
         await _fusionnerCollection(data.db||data);
@@ -5144,37 +5144,115 @@ async function chargerLots(files){
       afficherIndicateur('✅ Fusion — '+db.arbres.length+' arbres');
       return;
     }
-    _showLoading('Chargement en cours...');
   }
 
-  let premierFait = false;
+  // Lire et parser tous les fichiers d'abord
+  _showProgressLoading('Lecture des fichiers…', 0, 1, 0, nb);
+  const collections = [];
   for(let i=0;i<filesSorted.length;i++){
-    _showLoading('Lot '+(i+1)+'/'+nb+' — lecture ('+Math.round(filesSorted[i].size/1024/1024)+' MB)...');
-    await new Promise(r=>setTimeout(r,80));
-    let data;
+    _showProgressLoading('Lecture fichier '+(i+1)+'/'+nb+' ('+Math.round(filesSorted[i].size/1024/1024)+' MB)…', 0, 1, i, nb);
+    await new Promise(r=>setTimeout(r,30));
     try{
       const text = await filesSorted[i].text();
-      _showLoading('Lot '+(i+1)+'/'+nb+' — décodage JSON...');
-      await new Promise(r=>setTimeout(r,50));
-      data = JSON.parse(text);
+      _showProgressLoading('Décodage lot '+(i+1)+'/'+nb+'…', 0, 1, i, nb);
+      await new Promise(r=>setTimeout(r,30));
+      const data = JSON.parse(text);
+      collections.push(data.db||data);
     } catch(e){
       console.warn('Lot illisible:', filesSorted[i].name, e);
-      continue;
-    }
-    const collection = data.db || data;
-    if(!premierFait){
-      _showLoading('Lot '+(i+1)+'/'+nb+' — chargement photos...');
-      await _chargerCollection(collection);
-      premierFait = true;
-    } else {
-      _showLoading('Lot '+(i+1)+'/'+nb+' — fusion arbres...');
-      await _fusionnerArbres(collection.arbres||[]);
     }
   }
+  if(!collections.length){ _hideLoading(); alert('Aucun fichier lisible'); return; }
 
-  render(); _hideLoading();
-  const nbP = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
-  afficherIndicateur('✅ '+nb+' lots chargés — '+db.arbres.length+' arbres · '+nbP+' photos');
+  // Compter le total d'arbres et de photos
+  const tousArbres = [];
+  const headerCollection = collections[0];
+  collections.forEach(c=>{ (c.arbres||[]).forEach(a=>tousArbres.push(a)); });
+  const totalArbres = tousArbres.length;
+  const totalPhotos = tousArbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
+
+  // Vider IDB
+  _showProgressLoading('Préparation…', 0, totalArbres, 0, nb);
+  const idb = await ouvrirIDB();
+  await new Promise(res=>{ const tx=idb.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).clear(); tx.oncomplete=res; });
+
+  // Charger les métadonnées de la collection (premier lot)
+  db.arbres = [];
+  if(headerCollection.pots) db.pots=headerCollection.pots;
+  if(headerCollection.substrats) db.substrats=headerCollection.substrats;
+  if(headerCollection.melanges) db.melanges=headerCollection.melanges;
+  if(headerCollection.rempotages) db.rempotages=headerCollection.rempotages;
+  if(headerCollection.engrais) db.engrais=headerCollection.engrais;
+  if(headerCollection.produits) db.produits=headerCollection.produits;
+  if(headerCollection.especes) db.especes=headerCollection.especes;
+  if(headerCollection.especesSupprimees) db.especesSupprimees=headerCollection.especesSupprimees;
+  if(headerCollection.cultivars) db.cultivars=headerCollection.cultivars;
+  if(headerCollection.travaux_types) db.travaux_types=headerCollection.travaux_types;
+  if(headerCollection.nextId) db.nextId=headerCollection.nextId;
+  if(headerCollection.nextPotId) db.nextPotId=headerCollection.nextPotId;
+  if(headerCollection.nextSubId) db.nextSubId=headerCollection.nextSubId;
+  if(headerCollection.nextMelId) db.nextMelId=headerCollection.nextMelId;
+  if(headerCollection.nextEngId) db.nextEngId=headerCollection.nextEngId;
+  if(headerCollection.nextProdId) db.nextProdId=headerCollection.nextProdId;
+  if(headerCollection.nextRempId) db.nextRempId=headerCollection.nextRempId;
+
+  // Charger chaque arbre progressivement
+  let nbPhotosChargees = 0;
+  let arbreIdx = 0;
+  for(const a of tousArbres){
+    const nbP = (a.photos||[]).filter(p=>p.dataUrl).length;
+    _showProgressLoading(
+      '🌿 '+a.nom+' — '+(nbP>0?nbP+' photo'+(nbP>1?'s':''):'pas de photo'),
+      arbreIdx, totalArbres, 0, nb
+    );
+    // Sauver les photos dans IDB arbre par arbre
+    for(const p of (a.photos||[])){
+      if(p.dataUrl){ await idbSauverPhoto(a.id, p.id, p.dataUrl); p.dataUrl=null; nbPhotosChargees++; }
+    }
+    db.arbres.push(a);
+    arbreIdx++;
+    // Pause toutes les 3 arbres pour laisser respirer le navigateur
+    if(arbreIdx % 3 === 0){
+      await new Promise(r=>setTimeout(r,10));
+    }
+    // Render partiel toutes les 10 arbres
+    if(arbreIdx % 10 === 0) render();
+  }
+
+  await chargerPhotosDepuisIDB();
+  render();
+  _hideLoading();
+  sauvegarderLocal();
+  afficherIndicateur('✅ '+totalArbres+' arbres · '+nbPhotosChargees+' photos chargées');
+}
+
+// Affiche un écran de chargement avec barre de progression
+function _showProgressLoading(msg, current, total, lotIdx, lotTotal){
+  let el = document.getElementById('loading-overlay');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'loading-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,26,24,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:sans-serif';
+    el.innerHTML = `
+      <div style="font-size:48px">🌿</div>
+      <div id="loading-msg" style="color:#fff;font-size:17px;text-align:center;max-width:380px;line-height:1.5;padding:0 20px"></div>
+      <div style="width:320px;background:rgba(255,255,255,.15);border-radius:10px;overflow:hidden;height:14px">
+        <div id="loading-bar" style="height:100%;background:#4a8a42;border-radius:10px;transition:width .3s;width:0%"></div>
+      </div>
+      <div id="loading-pct" style="color:rgba(255,255,255,.6);font-size:13px">0%</div>
+      <div style="color:rgba(255,255,255,.4);font-size:12px">Ne fermez pas cette page…</div>`;
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  const msgEl = document.getElementById('loading-msg');
+  const barEl = document.getElementById('loading-bar');
+  const pctEl = document.getElementById('loading-pct');
+  if(msgEl) msgEl.textContent = msg;
+  if(total > 0 && barEl && pctEl){
+    const pct = Math.round(current / total * 100);
+    barEl.style.width = pct+'%';
+    pctEl.textContent = pct+'% — '+current+'/'+total+' arbres'+( lotTotal>1?' (lot '+(lotIdx+1)+'/'+lotTotal+')':'');
+  }
 }
 
 // Charge une collection complète (remplace)
