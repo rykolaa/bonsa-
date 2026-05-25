@@ -275,10 +275,6 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .compo-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 .price-pill{font-size:11px;background:var(--gold-light);color:var(--gold);padding:2px 8px;border-radius:10px;font-weight:500}
 </style>
-  <!-- QR Code library -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <!-- Google Identity Services -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -299,7 +295,6 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
     <button class="btn-add" onclick="openAddModal()">＋ Nouvel arbre</button>
     <button class="btn-add" style="background:var(--rust);gap:5px" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
     <div style="display:flex;gap:6px;align-items:center;margin-left:4px;padding-left:10px;border-left:1px solid rgba(255,255,255,.15)">
-      <button class="btn-add" style="background:#7a5c2e;font-size:11px;padding:5px 10px" onclick="ouvrirQRCodes()" title="Générer les étiquettes QR code">🏷️ QR Codes</button>
       <button class="btn-add" style="background:#185fa5" onclick="sauvegarderJSON()" title="Sauvegarder les données (sans photos)">💾 Sauvegarder</button>
       <button class="btn-add" style="background:#2d6e28;font-size:11px;padding:5px 10px" onclick="ouvrirExportModal()" title="Exporter avec photos">📦 Export photos</button>
       <label class="btn-add" style="background:#6b6b5e;cursor:pointer" title="Charger une sauvegarde — accepte plusieurs fichiers (lots)">
@@ -307,12 +302,6 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
         <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this)">
       </label>
     </div>
-      <div id="gdrive-btn-wrap" style="display:flex;align-items:center;gap:6px;margin-left:4px;padding-left:10px;border-left:1px solid rgba(255,255,255,.15)">
-        <button id="gdrive-btn" class="btn-add" style="background:#1a73e8;font-size:11px;padding:5px 10px" onclick="gdriveToggle()" title="Synchroniser avec Google Drive">
-          <span id="gdrive-icon">☁️</span> <span id="gdrive-label">Google Drive</span>
-        </button>
-        <div id="gdrive-status" style="font-size:10px;color:rgba(255,255,255,.6);max-width:120px;line-height:1.2"></div>
-      </div>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
   </div>
   <div class="body">
@@ -1023,32 +1012,16 @@ function renderCollection(c){
     </div>
   </div>`;
 
-  if(!filtered.length){
-    // Si vraiment vide (pas de filtre actif), montrer le bouton Drive bien visible
-    if(!db.arbres.length){
-      html+=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;gap:16px;min-height:60vh">
-        <div style="font-size:64px">🌿</div>
-        <div style="font-family:var(--ff-display);font-size:24px;color:var(--ink);text-align:center">Yūgen Bonsaï</div>
-        <div style="font-size:14px;color:var(--stone);text-align:center;max-width:300px">Votre collection est vide.<br>Connectez Google Drive pour charger vos données.</div>
-        <button onclick="gdriveToggle()" style="background:#1a73e8;color:#fff;border:none;border-radius:12px;padding:16px 32px;font-size:17px;cursor:pointer;display:flex;align-items:center;gap:10px;font-weight:500;box-shadow:0 2px 8px rgba(26,115,232,.4)">
-          ☁️ Se connecter à Google Drive
-        </button>
-        <div style="font-size:12px;color:var(--stone);text-align:center">ou utilisez le bouton Charger pour une sauvegarde JSON</div>
-      </div>`;
-    } else {
-      html+=`<div class="empty"><div class="empty-icon">🌿</div><div style="font-size:16px;font-weight:500;margin-bottom:6px">Aucun arbre trouvé</div><div style="font-size:13px">Modifiez vos filtres ou ajoutez un nouvel arbre.</div></div>`;
-    }
-    c.innerHTML=html;return;}
+  if(!filtered.length){html+=`<div class="empty"><div class="empty-icon">🌿</div><div style="font-size:16px;font-weight:500;margin-bottom:6px">Aucun arbre trouvé</div><div style="font-size:13px">Modifiez vos filtres ou ajoutez un nouvel arbre.</div></div>`;c.innerHTML=html;return;}
 
   if(state.disp==='grid'){
     html+=`<div class="grid">`+filtered.map(a=>{
       const days=daysUntil(a.prochain_soin);
       const lastPhoto=(a.photos||[]).find(p=>p.dataUrl);
-      const photoSrc = lastPhoto?.dataUrl || a.photo_mini || null;
       return`<div class="card" onclick="openDetail(${a.id})">
         <div class="card-thumb">
-          ${photoSrc
-            ?`<img src="${photoSrc}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" alt="${a.nom}"${!lastPhoto?' title="Photo de reconnaissance (Drive)"':''} >`
+          ${lastPhoto
+            ?`<img src="${lastPhoto.dataUrl}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" alt="${a.nom}">`
             :`<span style="font-size:56px">${getEmoji(a.espece)}</span>`}
           <span class="card-style-tag">${styleShort(a.style)}</span>
         </div>
@@ -1217,19 +1190,15 @@ function renderGalerie(c){
       const globalIdx = photos.indexOf(p);
       // Générer un id unique pour la carte afin de mettre à jour l'orientation après chargement de l'image
       const cardId = `pc-${p.id}-${i}`;
-      // Fallback: photo_mini de l'arbre si photo manquante dans IDB
-      const arbre = db.arbres.find(x=>x.id===p.arbreId);
-      const displaySrc = p.dataUrl || (arbre?.photo_mini && p === (arbre.photos||[])[0] ? arbre.photo_mini : null);
       html+=`<div class="photo-card" id="${cardId}" onclick="openLightbox(${globalIdx})">
-        ${displaySrc
-          ?`<img src="${displaySrc}" alt="${p.arbre}" onload="setOrientationClass(this)"${!p.dataUrl?' title="Aperçu basse résolution"':''} >`
+        ${p.dataUrl
+          ?`<img src="${p.dataUrl}" alt="${p.arbre}" onload="setOrientationClass(this)">`
           :`<div class="photo-card-placeholder">${p.emoji}</div>`}
         <button class="photo-delete" onclick="event.stopPropagation();deletePhoto('${p.arbreId}','${p.id}')">✕</button>
         <div class="photo-card-body">
           <div class="photo-card-arbre">${p.emoji} ${p.arbre}</div>
           <div class="photo-card-date">📅 ${p.date?fmtDate(p.date):'Date inconnue'}</div>
           ${p.type?`<span class="photo-card-type">${p.type}</span>`:''}
-          ${!p.dataUrl?`<span class="photo-card-type" style="background:var(--gold-light);color:var(--gold)">📦 Charger les lots</span>`:''}
           ${p.desc?`<div style="font-size:11px;color:var(--stone);margin-top:4px;line-height:1.4;font-style:italic">"${p.desc}"</div>`:''}
         </div>
       </div>`;
@@ -1539,13 +1508,6 @@ async function savePhotos(){
   nouvelles.sort((a,b)=>b.date.localeCompare(a.date));
   nouvelles.forEach(p=>a.photos.unshift(p));
 
-  // Sync la photo de couverture vers Drive si connecté
-  if(_gdriveToken) syncPhotoCouverture(arbreId);
-  // Mettre à jour photo_mini en RAM (première photo)
-  if(nouvelles.length && nouvelles[0].dataUrl){
-    compresserPhoto(nouvelles[0].dataUrl, 300, 0.75).then(mini=>{ a.photo_mini = mini; });
-  }
-
   const gain = totalAvant>0 ? Math.round((1-totalApres/totalAvant)*100) : 0;
   const msg = `✅ ${nouvelles.length} photo${nouvelles.length>1?'s':''} importée${nouvelles.length>1?'s':''} · ${totalApres>1024?Math.round(totalApres/1024*10)/10+' MB':totalApres+' KB'} (−${gain}%)`;
 
@@ -1555,6 +1517,12 @@ async function savePhotos(){
   else if(state.selectedDetailId) openDetail(state.selectedDetailId);
   autoSave();
   afficherIndicateur(msg);
+
+  window._photoFilesQueue = [];
+  closeModal();
+  if(state.page==='galerie') renderGalerie(document.getElementById('content'));
+  else if(state.selectedDetailId) openDetail(state.selectedDetailId);
+  autoSave();
 }
 
 // Échappe les caractères HTML pour usage sûr dans innerHTML
@@ -1563,9 +1531,7 @@ function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').repla
 // Change la photo principale via index (évite les dataUrl géants dans les onclick)
 function dpSetCoverIdx(i){
   const img = document.getElementById('dp-cover-img');
-  if(!img || !window._dpPhotos) return;
-  const src = window._dpPhotos[i];
-  if(src) img.src = src;
+  if(img && window._dpPhotos && window._dpPhotos[i]) img.src = window._dpPhotos[i];
 }
 function dpSetCover(src){ const img=document.getElementById('dp-cover-img'); if(img) img.src=src; }
 
@@ -1712,7 +1678,6 @@ function openDetail(id){
   const days = daysUntil(a.prochain_soin);
   const photos = a.photos||[];
   const coverPhoto = photos.find(p=>p.dataUrl);
-  const coverSrc = coverPhoto?.dataUrl || a.photo_mini || null;
   const careClass = days!==null ? (days<=7?'urgent':days<=30?'ok':'neutral') : 'neutral';
 
   // Stocker les dataUrls dans un tableau global pour éviter les inline onclick géants
@@ -1761,19 +1726,17 @@ function openDetail(id){
     <!-- COLONNE GAUCHE : photos -->
     <div class="dp-photo-col">
       <div class="dp-photo-main" onclick="openDetailLightbox(${a.id},0)">
-        ${coverSrc
-          ? `<img src="${coverSrc}" alt="${esc(a.nom)}" id="dp-cover-img"${!coverPhoto?' title="Aperçu Drive (chargez les lots pour voir en pleine résolution)"':''} >`
+        ${coverPhoto
+          ? `<img src="${coverPhoto.dataUrl}" alt="${esc(a.nom)}" id="dp-cover-img">`
           : `<div class="dp-photo-emoji">${getEmoji(a.espece)}</div>`}
       </div>
       ${photos.length > 1 ? `
       <div class="dp-photo-strip-vert">
-        ${photos.map((p,i)=>{
-          const thumbSrc = p.dataUrl || (i===0 ? a.photo_mini : null);
-          return thumbSrc
-          ? `<img src="${thumbSrc}" alt="${fmtDate(p.date)}" title="${esc(p.type||'')} ${fmtDate(p.date)}"
+        ${photos.map((p,i)=>p.dataUrl
+          ? `<img src="${p.dataUrl}" alt="${fmtDate(p.date)}" title="${esc(p.type||'')} ${fmtDate(p.date)}"
                onclick="dpSetCoverIdx(${i});openDetailLightbox(${a.id},${i})">`
           : `<div class="dp-strip-thumb" style="background:var(--moss-light);display:flex;align-items:center;justify-content:center;font-size:22px">${getEmoji(a.espece)}</div>`
-        }).join('')}
+        ).join('')}
         <div class="dp-strip-add" onclick="openPhotoModal(${a.id})" title="Ajouter une photo">＋</div>
       </div>` : `
       <div style="padding:8px 6px">
@@ -2505,19 +2468,14 @@ function openImportModal(){
         ✅ Format reconnu : <strong>Prel_016_Hêtre_commun.docm</strong> et tous vos fichiers du même modèle.<br>
         Toutes les données seront extraites : espèce, mensurations, GPS, travaux (taille + rempotage avec pot), photos de la galerie, notes.
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <label class="btn" style="flex:1;text-align:center;cursor:pointer;padding:10px">
-          📋 Fichiers .docm
-          <input type="file" id="f-docm-files" accept=".docm,.docx" multiple style="display:none" onchange="parseDocmFiles(this)">
-        </label>
-        <label class="btn" style="flex:1;text-align:center;cursor:pointer;padding:10px" title="Charge tous les .docm dans le dossier et ses sous-dossiers">
-          📁 Dossier (avec sous-dossiers)
-          <input type="file" id="f-docm-folder" accept=".docm,.docx" multiple webkitdirectory style="display:none" onchange="parseDocmFiles(this)">
-        </label>
-      </div>
-      <div id="docm-preview" style="text-align:center;padding:16px;background:var(--stone-light);border-radius:8px;color:var(--stone);font-size:13px">
-        Aucun fichier sélectionné
-      </div>
+      <label class="upload-zone" id="docm-zone">
+        <input type="file" id="f-docm-files" accept=".docm,.docx" multiple onchange="parseDocmFiles(this)">
+        <div id="docm-preview">
+          <div style="font-size:32px;margin-bottom:8px">📋</div>
+          <div style="font-size:14px;font-weight:500;color:var(--stone)">Cliquez ou glissez vos fiches .docm</div>
+          <div style="font-size:12px;color:var(--stone);margin-top:4px">Plusieurs fichiers acceptés — une fiche par arbre</div>
+        </div>
+      </label>
       <div id="docm-result" style="margin-top:10px"></div>
     </div>
 
@@ -2571,31 +2529,14 @@ function parseDateFr(s){
 }
 
 async function parseDocmFiles(input){
-  // Filtrer uniquement les .docm/.docx (utile quand on sélectionne un dossier)
-  const allFiles = [...input.files];
-  const files = allFiles.filter(f=>/\.(docm|docx)$/i.test(f.name));
-  const ignores = allFiles.length - files.length;
-
-  if(!files.length){
-    document.getElementById('docm-result').innerHTML =
-      '<div style="color:var(--rust);font-size:13px">⚠️ Aucun fichier .docm ou .docx trouvé'+(ignores?` (${ignores} fichier${ignores>1?'s':''} ignoré${ignores>1?'s':''})`:'')+'. Vérifiez que vos fiches sont bien des fichiers Word.</div>';
-    return;
-  }
-
-  // Afficher les sous-dossiers détectés
-  const sousDossiers = new Set(files.map(f=>f.webkitRelativePath?.split('/').slice(0,-1).join('/') || '').filter(Boolean));
-  const nbDossiers = sousDossiers.size;
-
-  const result = document.getElementById('docm-result');
-  const preview = document.getElementById('docm-preview');
-  if(preview) preview.innerHTML = '📋 <strong>'+files.length+' fiche'+( files.length>1?'s':'')+' trouvée'+(files.length>1?'s':'')+'</strong>'
-    +(nbDossiers>1?' dans '+nbDossiers+' dossiers':'')
-    +(ignores?' · '+ignores+' fichier'+(ignores>1?'s':'')+' ignoré'+(ignores>1?'s':'') :'');
-  result.innerHTML = '<div style="color:var(--stone);font-size:13px">⏳ Lecture de '+files.length+' fiche'+(files.length>1?'s':'')+'…</div>';
-
+  const files=[...input.files];
+  if(!files.length)return;
+  const result=document.getElementById('docm-result');
+  result.innerHTML=`<div style="color:var(--stone);font-size:13px">⏳ Lecture de ${files.length} fiche${files.length>1?'s':''}…</div>`;
+  
   window._importDocmParsed=[];
   let processed=0;
-
+  
   for(const file of files){
     try{
       const parsed = await parseOneDocm(file);
@@ -2605,7 +2546,7 @@ async function parseDocmFiles(input){
       window._importDocmParsed.push({_error:true, _filename:file.name, _msg:e.message});
     }
     processed++;
-    result.innerHTML='<div style="color:var(--stone);font-size:13px">⏳ '+processed+'/'+files.length+' fiche'+(files.length>1?'s':'')+' lue'+(files.length>1?'s':'')+'…</div>';
+    result.innerHTML=`<div style="color:var(--stone);font-size:13px">⏳ ${processed}/${files.length} fiche${files.length>1?'s':''} lue${files.length>1?'s':''}…</div>`;
   }
   
   // Show preview
@@ -4578,25 +4519,6 @@ async function chargerPhotosDepuisIDB(){
   });
 }
 
-// Charge les photos IDB de manière asynchrone et met à jour l'affichage progressivement
-async function chargerPhotosDepuisIDBLazy(){
-  const toutes = await idbToutesPhotos();
-  if(!toutes.length) return;
-  const map = {};
-  toutes.forEach(r=>{ map[r.key] = r.dataUrl; });
-  let updated = false;
-  db.arbres.forEach(a=>{
-    (a.photos||[]).forEach(p=>{
-      const key = _photoKey(a.id, p.id);
-      if(map[key] && !p.dataUrl){ p.dataUrl = map[key]; updated = true; }
-    });
-  });
-  if(updated){
-    render();
-    if(state.selectedDetailId) openDetail(state.selectedDetailId);
-  }
-}
-
 // ── COMPRESSION PHOTO + CORRECTION EXIF ──────────────────────────────────────
 // Lit l'orientation EXIF et fait pivoter le canvas en conséquence
 // Évite les "bandes de couleur" causées par les photos de smartphone rotées
@@ -4805,22 +4727,43 @@ function ouvrirExportModal(){
   document.getElementById('modal-overlay').style.display='flex';
 }
 
-// Export par lots — génère N fichiers JSON de ~maxMB chacun
+// Export par lots — génère N fichiers JSON de ~maxMB chacun avec photos compressées à 800px
 async function exporterParLots(maxMB=100){
   closeModal();
-  afficherIndicateur('⏳ Préparation de l\'export par lots…');
 
   // Charger toutes les photos IDB
+  afficherIndicateur('⏳ Chargement des photos depuis IndexedDB…');
+  await new Promise(r=>setTimeout(r,50));
   let idbMap = {};
   try{
     const toutes = await idbToutesPhotos();
     toutes.forEach(r=>{ idbMap[r.key]=r.dataUrl; });
   } catch(e){}
 
-  const maxBytes = maxMB * 1024 * 1024 * 1.33; // base64 ~33% overhead
+  const nbPhotosTotal = Object.keys(idbMap).length;
+  afficherIndicateur(`⏳ Compression de ${nbPhotosTotal} photos à 800px…`);
+  await new Promise(r=>setTimeout(r,50));
+
+  // Compresser toutes les photos à 800px max
+  const idbMapCompressed = {};
+  let compIdx = 0;
+  for(const [key, dataUrl] of Object.entries(idbMap)){
+    if(dataUrl){
+      idbMapCompressed[key] = await compresserPhoto(dataUrl, 800, 0.78);
+    }
+    compIdx++;
+    if(compIdx % 5 === 0){
+      afficherIndicateur(`⏳ Compression ${compIdx}/${nbPhotosTotal} photos…`);
+      await new Promise(r=>setTimeout(r,10));
+    }
+  }
+
+  afficherIndicateur('⏳ Préparation des lots…');
+  await new Promise(r=>setTimeout(r,50));
+
+  const maxBytes = maxMB * 1024 * 1024 * 1.33;
   const date = _dateStr();
 
-  // Header commun (sans arbres)
   const headerBase = {
     version:5, _lot:true, savedAt:new Date().toISOString(),
     nextId:db.nextId, nextPotId:db.nextPotId||1,
@@ -4831,22 +4774,7 @@ async function exporterParLots(maxMB=100){
     especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
   };
 
-  let lotNum = 1;
-  let lotArbres = [];
-  let lotBytes = 0;
-
-  const telechargerLot = (arbres, num, total) => {
-    const payload = JSON.stringify({
-      ...headerBase,
-      _lotNum: num,
-      _lotTotal: total, // sera mis à jour à la fin
-      arbres
-    });
-    const blob = new Blob([payload], {type:'application/json'});
-    _telechargerBlob(blob, `Yugen_Bonsai_lot${String(num).padStart(2,'0')}_${date}.json`);
-  };
-
-  // Pré-calculer les lots
+  // Pré-calculer les lots avec photos compressées
   const lots = [];
   let lotCourant = [];
   let bytesCourant = JSON.stringify(headerBase).length;
@@ -4854,7 +4782,7 @@ async function exporterParLots(maxMB=100){
   for(let i=0; i<db.arbres.length; i++){
     const a = db.arbres[i];
     const aOut = {...a, photos:(a.photos||[]).map(p=>({
-      ...p, dataUrl: idbMap[_photoKey(a.id,p.id)] || p.dataUrl || null
+      ...p, dataUrl: idbMapCompressed[_photoKey(a.id,p.id)] || idbMap[_photoKey(a.id,p.id)] || p.dataUrl || null
     }))};
     const aStr = JSON.stringify(aOut);
     if(bytesCourant + aStr.length > maxBytes && lotCourant.length > 0){
@@ -4865,22 +4793,21 @@ async function exporterParLots(maxMB=100){
       lotCourant.push(aOut);
       bytesCourant += aStr.length;
     }
-    afficherIndicateur(`⏳ Préparation lot ${lots.length+1} — arbre ${i+1}/${db.arbres.length}…`);
+    afficherIndicateur(`⏳ Lot ${lots.length+1} — arbre ${i+1}/${db.arbres.length}…`);
   }
   if(lotCourant.length) lots.push(lotCourant);
 
   const nbLots = lots.length;
-  // Télécharger chaque lot avec un délai pour laisser le navigateur respirer
   for(let i=0; i<lots.length; i++){
     await new Promise(r=>setTimeout(r, 300));
     const payload = JSON.stringify({...headerBase, _lotNum:i+1, _lotTotal:nbLots, arbres:lots[i]});
     const blob = new Blob([payload], {type:'application/json'});
     _telechargerBlob(blob, `Yugen_Bonsai_lot${String(i+1).padStart(2,'0')}de${nbLots}_${date}.json`);
-    afficherIndicateur(`⬇️ Téléchargement lot ${i+1}/${nbLots}…`);
+    afficherIndicateur(`⬇️ Téléchargement lot ${i+1}/${nbLots} (${Math.round(blob.size/1024/1024*10)/10} MB)…`);
   }
 
   sauvegarderLocal();
-  afficherIndicateur(`✅ Export terminé — ${nbLots} fichier${nbLots>1?'s':''} · ${db.arbres.length} arbres`);
+  afficherIndicateur(`✅ Export terminé — ${nbLots} lot${nbLots>1?'s':''} · ${db.arbres.length} arbres · photos compressées à 800px`);
 }
 // Les photos sont déjà persistées dans IndexedDB du navigateur.
 // Ce fichier JSON suffit pour tout restaurer (les photos se rechargent depuis IDB).
@@ -5124,7 +5051,7 @@ function _hideLoading(){
   if(el) el.style.display = 'none';
 }
 
-// Charge plusieurs fichiers de lots et les fusionne — version progressive
+// Charge plusieurs fichiers de lots — version progressive avec barre de progression
 async function chargerLots(files){
   const filesSorted = [...files].sort((a,b)=>a.name.localeCompare(b.name));
   const nb = filesSorted.length;
@@ -5146,7 +5073,7 @@ async function chargerLots(files){
     }
   }
 
-  // Lire et parser tous les fichiers d'abord
+  // Lire et parser tous les fichiers
   _showProgressLoading('Lecture des fichiers…', 0, 1, 0, nb);
   const collections = [];
   for(let i=0;i<filesSorted.length;i++){
@@ -5158,13 +5085,11 @@ async function chargerLots(files){
       await new Promise(r=>setTimeout(r,30));
       const data = JSON.parse(text);
       collections.push(data.db||data);
-    } catch(e){
-      console.warn('Lot illisible:', filesSorted[i].name, e);
-    }
+    } catch(e){ console.warn('Lot illisible:', filesSorted[i].name, e); }
   }
   if(!collections.length){ _hideLoading(); alert('Aucun fichier lisible'); return; }
 
-  // Compter le total d'arbres et de photos
+  // Rassembler tous les arbres
   const tousArbres = [];
   const headerCollection = collections[0];
   collections.forEach(c=>{ (c.arbres||[]).forEach(a=>tousArbres.push(a)); });
@@ -5176,7 +5101,7 @@ async function chargerLots(files){
   const idb = await ouvrirIDB();
   await new Promise(res=>{ const tx=idb.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).clear(); tx.oncomplete=res; });
 
-  // Charger les métadonnées de la collection (premier lot)
+  // Charger métadonnées
   db.arbres = [];
   if(headerCollection.pots) db.pots=headerCollection.pots;
   if(headerCollection.substrats) db.substrats=headerCollection.substrats;
@@ -5196,27 +5121,24 @@ async function chargerLots(files){
   if(headerCollection.nextProdId) db.nextProdId=headerCollection.nextProdId;
   if(headerCollection.nextRempId) db.nextRempId=headerCollection.nextRempId;
 
-  // Charger chaque arbre progressivement
+  // Charger chaque arbre — photo par photo avec pauses
   let nbPhotosChargees = 0;
   let arbreIdx = 0;
   for(const a of tousArbres){
     const nbP = (a.photos||[]).filter(p=>p.dataUrl).length;
-    _showProgressLoading(
-      '🌿 '+a.nom+' — '+(nbP>0?nbP+' photo'+(nbP>1?'s':''):'pas de photo'),
-      arbreIdx, totalArbres, 0, nb
-    );
-    // Sauver les photos dans IDB arbre par arbre
+    _showProgressLoading('🌿 '+a.nom+(nbP>0?' — '+nbP+' photo'+(nbP>1?'s':''):''), arbreIdx, totalArbres, 0, nb);
+    await new Promise(r=>setTimeout(r,20));
     for(const p of (a.photos||[])){
-      if(p.dataUrl){ await idbSauverPhoto(a.id, p.id, p.dataUrl); p.dataUrl=null; nbPhotosChargees++; }
+      if(p.dataUrl){
+        await idbSauverPhoto(a.id, p.id, p.dataUrl);
+        p.dataUrl = null;
+        nbPhotosChargees++;
+        await new Promise(r=>setTimeout(r,15));
+      }
     }
     db.arbres.push(a);
     arbreIdx++;
-    // Pause toutes les 3 arbres pour laisser respirer le navigateur
-    if(arbreIdx % 3 === 0){
-      await new Promise(r=>setTimeout(r,10));
-    }
-    // Render partiel toutes les 10 arbres
-    if(arbreIdx % 10 === 0) render();
+    if(arbreIdx % 8 === 0) render();
   }
 
   await chargerPhotosDepuisIDB();
@@ -5226,15 +5148,14 @@ async function chargerLots(files){
   afficherIndicateur('✅ '+totalArbres+' arbres · '+nbPhotosChargees+' photos chargées');
 }
 
-// Affiche un écran de chargement avec barre de progression
+// Barre de progression
 function _showProgressLoading(msg, current, total, lotIdx, lotTotal){
   let el = document.getElementById('loading-overlay');
   if(!el){
     el = document.createElement('div');
     el.id = 'loading-overlay';
     el.style.cssText = 'position:fixed;inset:0;background:rgba(26,26,24,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:sans-serif';
-    el.innerHTML = `
-      <div style="font-size:48px">🌿</div>
+    el.innerHTML = `<div style="font-size:48px">🌿</div>
       <div id="loading-msg" style="color:#fff;font-size:17px;text-align:center;max-width:380px;line-height:1.5;padding:0 20px"></div>
       <div style="width:320px;background:rgba(255,255,255,.15);border-radius:10px;overflow:hidden;height:14px">
         <div id="loading-bar" style="height:100%;background:#4a8a42;border-radius:10px;transition:width .3s;width:0%"></div>
@@ -5249,9 +5170,9 @@ function _showProgressLoading(msg, current, total, lotIdx, lotTotal){
   const pctEl = document.getElementById('loading-pct');
   if(msgEl) msgEl.textContent = msg;
   if(total > 0 && barEl && pctEl){
-    const pct = Math.round(current / total * 100);
+    const pct = Math.round(current/total*100);
     barEl.style.width = pct+'%';
-    pctEl.textContent = pct+'% — '+current+'/'+total+' arbres'+( lotTotal>1?' (lot '+(lotIdx+1)+'/'+lotTotal+')':'');
+    pctEl.textContent = pct+'% — '+current+'/'+total+' arbres'+(lotTotal>1?' (lot '+(lotIdx+1)+'/'+lotTotal+')':'');
   }
 }
 
@@ -5370,12 +5291,9 @@ async function initialiser(){
         // 2. Recharger les photos depuis IndexedDB
         await chargerPhotosDepuisIDB();
         render();
-        ouvrirDepuisQR();
         const savedAt = data.savedAt ? new Date(data.savedAt).toLocaleString('fr-CH') : '';
         const nbPhotos = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
         afficherIndicateur(`✓ Collection restaurée${savedAt?' ('+savedAt+')':''} — ${db.arbres.length} arbres · ${nbPhotos} photo${nbPhotos!==1?'s':''}`);
-        // Charger les photos manquantes en arrière-plan
-        setTimeout(()=>chargerPhotosDepuisIDBLazy(), 500);
         return;
       }
     }
@@ -5387,362 +5305,7 @@ async function initialiser(){
   afficherIndicateur('Données de démonstration chargées');
 }
 
-// ── QR CODES ──────────────────────────────────────────────────────────────────
-function ouvrirQRCodes(){
-  const arbres = db.arbres;
-  if(!arbres.length){ alert('Aucun arbre dans la collection'); return; }
-
-  // L'URL encodée dans le QR : ouvre localhost:8080 sur la fiche de l'arbre
-  const baseUrl = window.location.origin + window.location.pathname;
-
-  const m = document.getElementById('modal');
-  m.innerHTML = `
-  <div class="modal-head">
-    <div class="modal-title">🏷️ Étiquettes QR Code</div>
-    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
-  </div>
-  <div class="modal-body">
-    <div style="font-size:12px;color:var(--stone);margin-bottom:12px;line-height:1.5">
-      Imprimez ces étiquettes et plastifiez-les pour vos pots.<br>
-      Scanner le QR code depuis votre téléphone ouvre directement la fiche de l'arbre.
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="btn btn-primary" onclick="imprimerQRCodes()">🖨️ Imprimer tout</button>
-      <select id="qr-filtre" onchange="filtrerQRCodes()" style="font-size:12px">
-        <option value="">Tous les arbres (${arbres.length})</option>
-        ${[...new Set(arbres.map(a=>a.espece))].sort().map(e=>`<option value="${esc(e)}">${e}</option>`).join('')}
-      </select>
-    </div>
-    <div id="qr-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;max-height:60vh;overflow-y:auto">
-      ${arbres.map(a=>`
-        <div class="qr-card" data-espece="${esc(a.espece)}" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;break-inside:avoid">
-          <div id="qr-${a.id}" style="display:flex;justify-content:center;margin-bottom:6px"></div>
-          <div style="font-size:11px;font-weight:600;color:var(--ink)">${esc(a.nom)}</div>
-          <div style="font-size:10px;color:var(--stone);font-style:italic">${esc(getLatin(a.espece,a)||a.espece)}</div>
-          <div style="font-size:10px;color:var(--stone)">${a.num||''}</div>
-        </div>`).join('')}
-    </div>
-  </div>`;
-  document.getElementById('modal-overlay').style.display='flex';
-
-  // Générer les QR codes après le rendu
-  setTimeout(()=>{
-    arbres.forEach(a=>{
-      const el = document.getElementById('qr-'+a.id);
-      if(!el) return;
-      try{
-        new QRCode(el, {
-          text: baseUrl+'?arbre='+a.id,
-          width: 120, height: 120,
-          colorDark:'#1a1a18', colorLight:'#ffffff',
-          correctLevel: QRCode.CorrectLevel.M
-        });
-      } catch(e){ el.textContent='QR'; }
-    });
-  }, 100);
-}
-
-function filtrerQRCodes(){
-  const val = document.getElementById('qr-filtre')?.value||'';
-  document.querySelectorAll('.qr-card').forEach(card=>{
-    card.style.display = (!val || card.dataset.espece===val) ? '' : 'none';
-  });
-}
-
-function imprimerQRCodes(){
-  const contenu = document.getElementById('qr-grid')?.innerHTML||'';
-  const win = window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html><head><title>QR Codes Yugen Bonsaï</title>
-  <style>
-    body{font-family:sans-serif;margin:10mm}
-    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-    .qr-card{border:1px solid #ccc;border-radius:6px;padding:8px;text-align:center;break-inside:avoid}
-    img{max-width:100%}
-    @media print{@page{size:A4;margin:10mm}}
-  </style></head><body>
-  <h2 style="text-align:center;margin-bottom:12px">🌿 Yūgen Bonsaï — Étiquettes</h2>
-  <div class="grid">${contenu}</div>
-  </body></html>`);
-  win.document.close();
-  setTimeout(()=>win.print(), 500);
-  win.document.close();
-}
-
-// ── PHOTO DE RECONNAISSANCE (mini-photo pour Drive) ───────────────────────────
-// Génère une version 300px de la photo de couverture et la stocke dans Drive
-async function syncPhotoCouverture(arbreId){
-  if(!_gdriveToken) return;
-  const a = db.arbres.find(x=>x.id===arbreId);
-  if(!a) return;
-  const cover = (a.photos||[]).find(p=>p.dataUrl);
-  if(!cover) return;
-
-  // Compresser à 300px
-  const mini = await compresserPhoto(cover.dataUrl, 300, 0.75);
-  const filename = 'cover_'+arbreId+'.jpg';
-
-  // Chercher si déjà sur Drive
-  const search = await fetch(
-    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name="'+filename+'"&fields=files(id)',
-    {headers:{'Authorization':'Bearer '+_gdriveToken}}
-  );
-  const data = await search.json();
-  const fileId = data.files?.[0]?.id || null;
-
-  // Convertir base64 en blob
-  const b64 = mini.split(',')[1];
-  const bytes = atob(b64);
-  const arr = new Uint8Array(bytes.length);
-  for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
-  const blob = new Blob([arr],{type:'image/jpeg'});
-
-  if(fileId){
-    // Mettre à jour
-    await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',
-      {method:'PATCH', headers:{'Authorization':'Bearer '+_gdriveToken,'Content-Type':'image/jpeg'}, body:blob});
-  } else {
-    // Créer avec metadata
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify({name:filename,parents:['appDataFolder']})],{type:'application/json'}));
-    form.append('file', blob);
-    await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-      {method:'POST', headers:{'Authorization':'Bearer '+_gdriveToken}, body:form});
-  }
-  // Stocker la mini dans db pour affichage mobile
-  a.photo_mini = mini;
-  sauvegarderLocal();
-}
-
-// Charger les mini-photos depuis Drive au démarrage
-async function chargerMiniPhotosDepuisDrive(){
-  if(!_gdriveToken) return;
-  const search = await fetch(
-    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name+contains+"cover_"&fields=files(id,name)',
-    {headers:{'Authorization':'Bearer '+_gdriveToken}}
-  );
-  const data = await search.json();
-  if(!data.files) return;
-  let loaded = 0;
-  const promises = data.files.map(file => new Promise(async resolve => {
-    const arbreId = parseInt(file.name.replace('cover_','').replace('.jpg',''));
-    const a = db.arbres.find(x=>x.id===arbreId);
-    if(!a){ resolve(); return; }
-    try{
-      const resp = await fetch('https://www.googleapis.com/drive/v3/files/'+file.id+'?alt=media',
-        {headers:{'Authorization':'Bearer '+_gdriveToken}});
-      const blob = await resp.blob();
-      const reader = new FileReader();
-      reader.onload = e => { a.photo_mini = e.target.result; loaded++; resolve(); };
-      reader.onerror = () => resolve();
-      reader.readAsDataURL(blob);
-    } catch(e){ resolve(); }
-  }));
-  await Promise.all(promises);
-  if(loaded > 0){
-    // Mettre à jour l'affichage avec les minis chargées
-    render();
-    // Si un détail est ouvert, le rafraîchir
-    if(state.selectedDetailId) openDetail(state.selectedDetailId);
-  }
-}
-
-// Ouvrir la fiche d'un arbre depuis un QR code (paramètre URL ?arbre=ID)
-function ouvrirDepuisQR(){
-  const params = new URLSearchParams(window.location.search);
-  const arbreId = parseInt(params.get('arbre'));
-  if(arbreId && db.arbres.find(x=>x.id===arbreId)){
-    setTimeout(()=>openDetail(arbreId), 500);
-  }
-}
-const GDRIVE_CLIENT_ID = '165416182571-el35ri2174f10k06fdknf4u5hr5rrj52.apps.googleusercontent.com'; // Fonctionne sur http://localhost:8080
-const GDRIVE_SCOPES    = 'https://www.googleapis.com/auth/drive.appdata';
-const GDRIVE_FILE_NAME = 'yugen_bonsai_data.json';
-
-let _gdriveToken    = null;
-let _gdriveFileId   = null;
-let _gdriveSyncing  = false;
-let _gdriveAutoSync = null;
-
-function gdriveSetStatus(msg, color){
-  const el = document.getElementById('gdrive-status');
-  if(el){ el.textContent = msg; el.style.color = color||'rgba(255,255,255,.6)'; }
-}
-
-function gdriveSetLabel(icon, label){
-  const i = document.getElementById('gdrive-icon');
-  const l = document.getElementById('gdrive-label');
-  if(i) i.textContent = icon;
-  if(l) l.textContent = label;
-}
-
-// Connexion / déconnexion
-function gdriveToggle(){
-  if(_gdriveToken){ gdriveDisconnect(); }
-  else { gdriveConnect(); }
-}
-
-function gdriveConnect(){
-  gdriveSetLabel('⏳','Connexion…');
-  gdriveSetStatus('Autorisation Google…');
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: GDRIVE_CLIENT_ID,
-    scope: GDRIVE_SCOPES,
-    callback: async (resp) => {
-      if(resp.error){ gdriveSetLabel('☁️','Google Drive'); gdriveSetStatus('❌ '+resp.error,'#ff6b6b'); return; }
-      _gdriveToken = resp.access_token;
-      gdriveSetLabel('🔄','Synchro…');
-      gdriveSetStatus('Connecté — chargement…','#a8d5a2');
-      // Sauvegarder token
-      try{ localStorage.setItem('gdrive_token', _gdriveToken); }catch(e){}
-      // Chercher ou créer le fichier
-      await gdriveFindOrCreateFile();
-      // Charger les données depuis Drive
-      await gdriveLoad();
-      // Activer l'auto-sync toutes les 30s
-      _gdriveAutoSync = setInterval(gdriveSave, 30000);
-      gdriveSetLabel('☁️✅','Drive actif');
-      gdriveSetStatus('Sync auto activée','#a8d5a2');
-    }
-  });
-  client.requestAccessToken();
-}
-
-function gdriveDisconnect(){
-  if(_gdriveAutoSync){ clearInterval(_gdriveAutoSync); _gdriveAutoSync = null; }
-  google.accounts.oauth2.revoke(_gdriveToken, ()=>{});
-  _gdriveToken = null; _gdriveFileId = null;
-  try{ localStorage.removeItem('gdrive_token'); }catch(e){}
-  gdriveSetLabel('☁️','Google Drive');
-  gdriveSetStatus('Déconnecté');
-}
-
-// Trouver ou créer le fichier dans Drive appdata
-async function gdriveFindOrCreateFile(){
-  // Chercher le fichier existant
-  const search = await fetch(
-    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name="'+GDRIVE_FILE_NAME+'"&fields=files(id,name,modifiedTime)',
-    {headers:{'Authorization':'Bearer '+_gdriveToken}}
-  );
-  const data = await search.json();
-  if(data.files && data.files.length > 0){
-    _gdriveFileId = data.files[0].id;
-  } else {
-    // Créer le fichier
-    const create = await fetch('https://www.googleapis.com/drive/v3/files',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+_gdriveToken,'Content-Type':'application/json'},
-      body: JSON.stringify({name:GDRIVE_FILE_NAME, parents:['appDataFolder']})
-    });
-    const file = await create.json();
-    _gdriveFileId = file.id;
-  }
-}
-
-// Charger depuis Drive
-async function gdriveLoad(){
-  if(!_gdriveToken || !_gdriveFileId) return;
-  gdriveSetStatus('⬇️ Chargement…');
-  try{
-    const resp = await fetch(
-      'https://www.googleapis.com/drive/v3/files/'+_gdriveFileId+'?alt=media',
-      {headers:{'Authorization':'Bearer '+_gdriveToken}}
-    );
-    if(!resp.ok){ gdriveSetStatus('Pas encore de données Drive','rgba(255,255,255,.5)'); return; }
-    const text = await resp.text();
-    if(!text || text.length < 10){ gdriveSetStatus('Fichier Drive vide','rgba(255,255,255,.5)'); return; }
-    const data = JSON.parse(text);
-    const collection = data.db || data;
-    if(!collection.arbres || !Array.isArray(collection.arbres)){ return; }
-
-    const nbActuel = db.arbres.length;
-    const nbDrive  = collection.arbres.length;
-
-    if(nbActuel > 0 && nbDrive > 0){
-      // Comparer les dates de sauvegarde
-      const localDate = localStorage.getItem('yugen_saved_at') || '';
-      const driveDate = collection.savedAt || '';
-      if(driveDate > localDate){
-        if(!confirm('Des données plus récentes existent sur Google Drive ('+new Date(driveDate).toLocaleString('fr-CH')+').\n\nCharger les données Drive ?')) return;
-      } else {
-        gdriveSetStatus('Données locales plus récentes','rgba(255,255,255,.5)');
-        await gdriveSave(); // Pousser les locales vers Drive
-        return;
-      }
-    }
-
-    // Charger depuis Drive
-    await _chargerCollection(collection);
-    render();
-    const nbPhotosIDB = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
-    const nbPhotosMeta = db.arbres.reduce((s,a)=>(s+(a.photos||[]).length),0);
-    if(nbPhotosMeta > 0 && nbPhotosIDB === 0){
-      gdriveSetStatus('✅ '+nbDrive+' arbres · photos: chargez les lots','#f0d080');
-      afficherIndicateur('☁️ '+nbDrive+' arbres chargés depuis Drive · 📷 '+nbPhotosMeta+' photos disponibles — chargez les lots JSON pour les afficher');
-    } else {
-      gdriveSetStatus('✅ '+nbDrive+' arbres chargés','#a8d5a2');
-      afficherIndicateur('☁️ Collection chargée depuis Google Drive — '+nbDrive+' arbres');
-    }
-    chargerMiniPhotosDepuisDrive();
-  } catch(e){
-    console.error('gdriveLoad error:', e);
-    gdriveSetStatus('❌ Erreur chargement','#ff6b6b');
-  }
-}
-
-// Sauvegarder vers Drive
-async function gdriveSave(){
-  if(!_gdriveToken || !_gdriveFileId || _gdriveSyncing) return;
-  _gdriveSyncing = true;
-  gdriveSetStatus('⬆️ Sauvegarde…');
-  try{
-    // Données sans photos (légères) — les photos restent dans IndexedDB
-    const arbresLeger = db.arbres.map(a=>({
-      ...a, photos:(a.photos||[]).map(p=>({...p, dataUrl:null}))
-    }));
-    const payload = JSON.stringify({
-      version:5, savedAt:new Date().toISOString(), _drive:true,
-      nextId:db.nextId, nextPotId:db.nextPotId||1,
-      nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
-      nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
-      pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
-      rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
-      cultivars:db.cultivars||[], travaux_types:db.travaux_types||[],
-      arbres:arbresLeger
-    });
-    const resp = await fetch(
-      'https://www.googleapis.com/upload/drive/v3/files/'+_gdriveFileId+'?uploadType=media',
-      {method:'PATCH', headers:{'Authorization':'Bearer '+_gdriveToken,'Content-Type':'application/json'}, body:payload}
-    );
-    if(resp.ok){
-      const now = new Date().toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'});
-      gdriveSetStatus('✅ Sync '+now,'#a8d5a2');
-      try{ localStorage.setItem('yugen_saved_at', new Date().toISOString()); }catch(e){}
-    } else {
-      gdriveSetStatus('❌ Erreur sync','#ff6b6b');
-    }
-  } catch(e){
-    gdriveSetStatus('❌ '+e.message,'#ff6b6b');
-  }
-  _gdriveSyncing = false;
-}
-
-// Hook sur autoSave pour déclencher aussi le sync Drive
-const _origAutoSave = autoSave;
-function autoSave(){
-  _origAutoSave();
-  if(_gdriveToken) gdriveSave();
-}
-
-// Tentative de reconnexion silencieuse au démarrage
-window.addEventListener('load', ()=>{
-  // Attendre que Google soit chargé
-  setTimeout(()=>{
-    const saved = localStorage.getItem('gdrive_token');
-    if(saved){ /* Le token expire — l'utilisateur doit se reconnecter manuellement */ }
-  }, 2000);
-});
+initialiser();
 </script>
 </body>
 </html>
-initialiser();
