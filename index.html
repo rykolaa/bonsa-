@@ -317,6 +317,8 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
         📂 Charger
         <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this)">
       </label>
+      <button class="btn-add" style="background:#0061ff" onclick="dropboxSauvegarder()" title="Envoyer vers Dropbox">☁️ ↑ Dropbox</button>
+      <button class="btn-add" style="background:#0061ff;filter:brightness(.85)" onclick="dropboxCharger()" title="Charger depuis Dropbox">☁️ ↓ Dropbox</button>
     </div>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
     <!-- Bouton menu mobile -->
@@ -339,6 +341,8 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
       📂 Charger sauvegarde
       <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this);toggleMobileMenu()">
     </label>
+    <button class="mob-btn" style="background:#0061ff" onclick="dropboxSauvegarder();toggleMobileMenu()">☁️ ↑ Envoyer vers Dropbox</button>
+    <button class="mob-btn" style="background:#0061ff;filter:brightness(.85)" onclick="dropboxCharger();toggleMobileMenu()">☁️ ↓ Charger depuis Dropbox</button>
   </div>
   <div class="body">
     <div class="sidebar" id="sidebar">
@@ -5355,6 +5359,79 @@ async function initialiser(){
 }
 
 initialiser();
+
+// ── SYNCHRONISATION DROPBOX ───────────────────────────────────────────────────
+const DBX_TOKEN = 'sl.u.AGgPd1qaGw4XrS1W40I2hbXi4JPh4b6I4Dj6LX18NfZ_rByxox5FCWW28y_IaKqNHMJkQ-89JxN5Ls_VcWtExHeA6YsUDJBB_t7rUZstmjUhGOs5vuEL3q71TNr2dgoHYu83QIrT5cMD0qUVa6_gxhpK0rP1p15RauA738QH-lmGT4USrlXYisYlYArFYYl5Q6g9-zlSwbf8VWaxInuL5gXyIq6auwBCy8iYscDDYdjw9j5alDocRZkoKDQvFn2BFoHkChUnASIElI11X3IY_AjcTZW9AFl52h40kMReXYeIuX9FfvfINzQTCZicoC93OnvEWFQgEpvE3_jIPoEeV7gts2mswMZuWSrCAODQ2Sipfq2WC5giJop19f5rIwpYdv6bKNl2P0sng2cy6Ve0XZIr47KQacE0_9UbLmywS02Y4UwyPVv-CAjgS9KQolmmIvw_Eku43jIHB0pdBuyYtDV2kTSmq2nQCAmC8Q7dDVU1_6C4IuvMITY0USZsz-YPIvCn5jgEmkYxp7I7Gfzmp4_LeWwaOt9bWh-YE20Uknp3ofEh20d3LRL5MPtiwLtBWXdDzzfowVIU3cpL2fPSqmQGxZjKPTayK2Uj3EPvvsZ6nM9185z8X96mypw1XjCoQFcUtqZ-GsBlBVy0EYRSEV7soYkf--FK3Ojlsc9Bv4nQN7ro4bgtVHew6CcRZfhe4-_LHKqNYVPn7EDnfJfJa1a3QM5xx-SAZORL2bI7BwGLhzmGJ5Rpgh_7Y3zkXnznxx40OUw5n4WbYaotkBASnKKOidQiw0KjqJCddh-qyLoTlIB6iPqzofsiVzelWYPXwr-FI1-5TW66RgTo2oURVbczQtuTHrZGjfqAMpLhD0PC3xG-gHhrkpknzXbWVotrgLwmTlh52xtTZckLOM6UvIJhNO1vAWTdpFDbMu4cL7mIfey4j9Av21lL3KLLQ6zSN_hK68kqb9mixZ6LJUOKEGzllJEpNXVZ0KgOWcfj2f6rsjbASZC70Ss_rZtXmyNWZcTls7pA-BNPUvch4HN1mxEGP7_NA61FVKqOp8C0BW7GoHi4KLbD7JHV-6-E2JC6ZXAzDf3QHv8NInrKFCBAY0sYGa6RyYSFXxejmLlTncysXcvW6hSorHYw-hYD6VjZ648i_PEmsd7BpfZl5Ljwfy4LQj7ROXrhQo8OvxPEEOSxku8_TWYS5X0wX9_N-uAn8M_zRh1xu2dtDF1QHkmJamo3BZomB5jxpYNCg6AUF4pzsO4Dt9bS7cN9jykTmdFOZQoIDPqx9l5VtxDPTwl-K89mtWWwBvJczQ75ha1CkrRnYA';
+const DBX_PATH = '/yugen_bonsai_sync.json';
+
+async function dropboxSauvegarder(){
+  try{
+    afficherIndicateur('☁️ Envoi vers Dropbox…');
+    const arbresLeger = db.arbres.map(a=>({
+      ...a, photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
+    }));
+    const payload = JSON.stringify({
+      version:5, savedAt:new Date().toISOString(),
+      nextId:db.nextId, nextPotId:db.nextPotId||1,
+      nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
+      nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
+      pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
+      rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger,
+      _note:'Synchronisation Dropbox — sans photos'
+    });
+    const resp = await fetch('https://content.dropboxapi.com/2/files/upload', {
+      method:'POST',
+      headers:{
+        'Authorization':'Bearer '+DBX_TOKEN,
+        'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH,mode:'overwrite',autorename:false,mute:false}),
+        'Content-Type':'application/octet-stream'
+      },
+      body: payload
+    });
+    if(!resp.ok){ const t=await resp.text(); throw new Error(t); }
+    const info = await resp.json();
+    const kb = Math.round(payload.length/1024);
+    afficherIndicateur('✅ Dropbox — '+db.arbres.length+' arbres · '+kb+' KB — '+new Date(info.server_modified).toLocaleString('fr-CH'));
+  } catch(e){
+    afficherIndicateur('❌ Dropbox erreur : '+e.message);
+    console.error(e);
+  }
+}
+
+async function dropboxCharger(){
+  try{
+    afficherIndicateur('☁️ Chargement depuis Dropbox…');
+    const resp = await fetch('https://content.dropboxapi.com/2/files/download', {
+      method:'POST',
+      headers:{
+        'Authorization':'Bearer '+DBX_TOKEN,
+        'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH})
+      }
+    });
+    if(!resp.ok){
+      if(resp.status===409) throw new Error('Aucune sauvegarde Dropbox trouvée. Faites d\'abord une sauvegarde depuis le PC.');
+      const t=await resp.text(); throw new Error(t);
+    }
+    const data = await resp.json();
+    const collection = data.db || data;
+    if(!collection.arbres || !Array.isArray(collection.arbres)) throw new Error('Format non reconnu');
+    const nbActuel = db.arbres.length;
+    if(nbActuel > 0){
+      if(!confirm('Vous avez '+nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\n— OK : Remplacer par Dropbox\n— Annuler : Abandonner')) return;
+    }
+    _showLoading('Chargement depuis Dropbox…');
+    await _chargerCollection(collection);
+    render(); _hideLoading();
+    const savedAt = data.savedAt ? new Date(data.savedAt).toLocaleString('fr-CH') : '';
+    afficherIndicateur('✅ Dropbox chargé'+( savedAt?' ('+savedAt+')':'')+' — '+db.arbres.length+' arbres');
+  } catch(e){
+    _hideLoading();
+    afficherIndicateur('❌ Dropbox erreur : '+e.message);
+    console.error(e);
+  }
+}
 </script>
 </body>
 </html>
