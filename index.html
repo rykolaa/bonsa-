@@ -121,6 +121,13 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .dp-photo-strip-vert img:hover{border-color:#fff}
 .dp-strip-add{height:40px;border-radius:5px;border:2px dashed rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(255,255,255,.7);font-size:20px;transition:.12s}
 .dp-strip-add:hover{border-color:#fff;color:#fff}
+.dp-strip-thumb-wrap{position:relative;flex-shrink:0}
+.dp-strip-thumb-wrap img{width:100%;height:58px;object-fit:cover;border-radius:5px;cursor:pointer;border:2px solid transparent;transition:.12s;display:block}
+.dp-strip-thumb-wrap img:hover{border-color:#fff}
+.dp-strip-del{position:absolute;top:2px;right:2px;width:18px;height:18px;background:rgba(180,40,20,.85);border:none;border-radius:50%;color:#fff;font-size:10px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1;z-index:5}
+.dp-strip-thumb-wrap:hover .dp-strip-del{display:flex}
+.dp-cover-del{position:absolute;top:8px;right:8px;background:rgba(180,40,20,.8);border:none;border-radius:6px;color:#fff;font-size:11px;padding:4px 8px;cursor:pointer;display:none;align-items:center;gap:4px;z-index:5;backdrop-filter:blur(4px)}
+.dp-photo-main:hover .dp-cover-del{display:flex}
 .dp-body{padding:16px 20px;overflow-y:auto;flex:1}
 .dp-section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--stone);margin-bottom:8px;margin-top:16px;padding-bottom:5px;border-bottom:1px solid var(--border)}
 .dp-section-title:first-child{margin-top:0}
@@ -1598,6 +1605,17 @@ function deletePhoto(arbreId, photoId){
   autoSave();
 }
 
+function deletePhotoDetail(arbreId, photoId){
+  if(!confirm('Supprimer cette photo ?')) return;
+  const a = db.arbres.find(x=>x.id===parseInt(arbreId));
+  if(!a) return;
+  a.photos = (a.photos||[]).filter(p=>p.id!==photoId);
+  idbSupprimerPhoto(arbreId, photoId);
+  autoSave();
+  // Rafraîchir le panneau de détail
+  openDetail(arbreId);
+}
+
 function findTravailIdx(arbreId, date, type){
   const a = db.arbres.find(x=>x.id===arbreId);
   if(!a) return -1;
@@ -1777,16 +1795,20 @@ function openDetail(id){
   <div class="dp-layout">
     <!-- COLONNE GAUCHE : photos -->
     <div class="dp-photo-col">
-      <div class="dp-photo-main" onclick="openDetailLightbox(${a.id},0)">
+      <div class="dp-photo-main" onclick="openDetailLightbox(${a.id},0)" style="position:relative">
         ${coverPhoto
-          ? `<img src="${coverPhoto.dataUrl}" alt="${esc(a.nom)}" id="dp-cover-img">`
+          ? `<img src="${coverPhoto.dataUrl}" alt="${esc(a.nom)}" id="dp-cover-img">
+             <button class="dp-cover-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${coverPhoto.id}')">🗑 Supprimer</button>`
           : `<div class="dp-photo-emoji">${getEmoji(a.espece)}</div>`}
       </div>
       ${photos.length > 1 ? `
       <div class="dp-photo-strip-vert">
         ${photos.map((p,i)=>p.dataUrl
-          ? `<img src="${p.dataUrl}" alt="${fmtDate(p.date)}" title="${esc(p.type||'')} ${fmtDate(p.date)}"
-               onclick="dpSetCoverIdx(${i});openDetailLightbox(${a.id},${i})">`
+          ? `<div class="dp-strip-thumb-wrap">
+               <img src="${p.dataUrl}" alt="${fmtDate(p.date)}" title="${esc(p.type||'')} ${fmtDate(p.date)}"
+                    onclick="dpSetCoverIdx(${i});openDetailLightbox(${a.id},${i});">
+               <button class="dp-strip-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${p.id}')" title="Supprimer cette photo">✕</button>
+             </div>`
           : `<div class="dp-strip-thumb" style="background:var(--moss-light);display:flex;align-items:center;justify-content:center;font-size:22px">${getEmoji(a.espece)}</div>`
         ).join('')}
         <div class="dp-strip-add" onclick="openPhotoModal(${a.id})" title="Ajouter une photo">＋</div>
