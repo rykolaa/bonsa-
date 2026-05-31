@@ -692,7 +692,7 @@ function majLatinField(){
 }
 
 let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], cultivars:[], travaux_types:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
-let state = {page:'collection', filter:'all', disp:'grid', selectedId:null};
+let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'num'};
 const etiqSel = new Set();
 
 function fmtDate(d){
@@ -803,7 +803,7 @@ function updateSidebar(){
 
 function getFiltered(){
   const q = document.getElementById('search').value.toLowerCase();
-  return db.arbres.filter(a=>{
+  const arr = db.arbres.filter(a=>{
     if(q){
       const styleInfo = STYLES.find(x=>x.fr===a.style||x.romaji===a.style);
       const styleRomaji = styleInfo ? styleInfo.romaji.toLowerCase() : '';
@@ -827,6 +827,18 @@ function getFiltered(){
     if(a.style===state.filter||a.origine===state.filter||a.espece===state.filter) return true;
     return false;
   });
+  // Tri
+  arr.sort((a,b)=>{
+    switch(state.sort){
+      case 'num':    return a.num.localeCompare(b.num, undefined, {numeric:true, sensitivity:'base'});
+      case 'nom':    return a.nom.localeCompare(b.nom, 'fr');
+      case 'sante':  return a.sante - b.sante;
+      case 'sante-': return b.sante - a.sante;
+      case 'date':   return (b.date_acq||'').localeCompare(a.date_acq||'');
+      default:       return 0;
+    }
+  });
+  return arr;
 }
 
 function santeColor(s){return s>=85?'#4a8a42':s>=70?'#b8860b':'#8b4a2f'}
@@ -1064,9 +1076,18 @@ function renderCollection(c){
   }
 
   html+=`<div class="view-toolbar"><div style="font-size:13px;color:var(--stone)">${filtered.length} arbre${filtered.length>1?'s':''} affiché${filtered.length>1?'s':''}</div>
-    <div class="view-toggle">
-      <button class="vtgl ${state.disp==='grid'?'active':''}" onclick="setDisp('grid')" title="Grille">⊞</button>
-      <button class="vtgl ${state.disp==='list'?'active':''}" onclick="setDisp('list')" title="Liste">≡</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
+        <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
+        <option value="nom"    ${state.sort==='nom'   ?'selected':''}>🔤 Nom A→Z</option>
+        <option value="sante"  ${state.sort==='sante' ?'selected':''}>📉 Santé ↑</option>
+        <option value="sante-" ${state.sort==='sante-'?'selected':''}>📈 Santé ↓</option>
+        <option value="date"   ${state.sort==='date'  ?'selected':''}>📅 Acquisition</option>
+      </select>
+      <div class="view-toggle">
+        <button class="vtgl ${state.disp==='grid'?'active':''}" onclick="setDisp('grid')" title="Grille">⊞</button>
+        <button class="vtgl ${state.disp==='list'?'active':''}" onclick="setDisp('list')" title="Liste">≡</button>
+      </div>
     </div>
   </div>`;
 
@@ -3134,6 +3155,8 @@ function setDisp(d){
   render();
 }
 
+function setSort(s){ state.sort=s; render(); }
+
 function openDetailLightbox(arbreId, idx){
   const a = db.arbres.find(x=>x.id===arbreId);
   if(!a) return;
@@ -5061,8 +5084,12 @@ function sauvegarderLocal(){
       version:4, savedAt:new Date().toISOString(),
       nextId:db.nextId, nextPotId:db.nextPotId||1,
       nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
+      nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:db.pots||[], substrats:db.substrats||[],
       melanges:db.melanges||[], rempotages:db.rempotages||[],
+      engrais:db.engrais||[], produits:db.produits||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      cultivars:db.cultivars||[], travaux_types:db.travaux_types||[],
       arbres:arbresLeger
     });
     localStorage.setItem(STORAGE_KEY, payload);
