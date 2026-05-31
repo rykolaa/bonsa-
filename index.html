@@ -484,6 +484,17 @@ const STYLES_DATA = {
   'Kozumikku': {img:``,desc:'Style cosmique ou Burton, forme libre et artistique.'},
 };
 const ORIGINES = ['Achat','Yamadori','Semis','Bouture','Don','Marcotte'];
+const EMPLACEMENTS = {
+  'Terrasse Est':   ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Terrasse Ouest': ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Terrasse Nord':  ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Terrasse Sud':   ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Serre froide':   ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Intérieur':      ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Jardin':         ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Table centrale': ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+  'Autre':          ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
+};
 // Types de travaux — dynamiques (db.travaux_types) avec fallback sur défauts
 const TAILLE_CATS = ['Keishitsuo','Shito','Mame','Shohin','Komono','Chūmono','Dai & Omono','Hachi-uye'];
 
@@ -2071,7 +2082,16 @@ function showArbreModal(a){
     </div>
     <div class="form-row">
       <div class="fg"><label>Ø Nébari (cm)</label><input id="f-dn" type="number" step="0.5" value="${isEdit?a.diam_nebari:5}"></div>
-      <div class="fg"><label>Localisation</label><input id="f-loc" value="${isEdit?a.localisation||'':''}" placeholder="Ex: Terrasse Est"></div>
+      <div class="fg" style="flex-direction:column;gap:4px"><label>Localisation</label>
+        <div style="display:flex;gap:6px">
+          <select id="f-loc-lieu" onchange="updateSousEmpl()" style="flex:1">
+            ${(()=>{ const lieux=Object.keys(EMPLACEMENTS); const cur=isEdit?(a.localisation||''):''; const parts=cur.split(' · '); const curLieu=parts[0]||''; return '<option value="">\u2014 Lieu —</option>'+lieux.map(l=>'<option '+( curLieu===l?'selected':'')+'>'+l+'</option>').join('')+'<option value="'+(!lieux.includes(curLieu)&&curLieu?curLieu:'')+'" '+(!lieux.includes(curLieu)&&curLieu?'selected':'')+'>'+ (!lieux.includes(curLieu)&&curLieu?curLieu:'') +'</option>'; })()}
+          </select>
+          <select id="f-loc-pos" style="flex:1">
+            ${(()=>{ const cur=isEdit?(a.localisation||''):''; const parts=cur.split(' · '); const curLieu=parts[0]||''; const curPos=parts[1]||''; const opts=EMPLACEMENTS[curLieu]||['Table plein soleil','Table mi-ombre','Terre plein plein soleil']; return '<option value="">\u2014 Emplacement \u2014</option>'+opts.map(p=>'<option '+(curPos===p?'selected':'')+'>'+p+'</option>').join(''); })()}
+          </select>
+        </div>
+      </div>
     </div>
     <div class="form-section">Provenance & acquisition</div>
     <div class="form-row">
@@ -2211,7 +2231,7 @@ function saveArbre(id){
     diam_tronc:parseFloat(document.getElementById('f-dt').value)||0,
     diam_houppier:parseFloat(document.getElementById('f-dh').value)||0,
     diam_nebari:parseFloat(document.getElementById('f-dn').value)||0,
-    localisation:document.getElementById('f-loc').value,
+    localisation:(()=>{ const l=document.getElementById('f-loc-lieu')?.value||''; const p=document.getElementById('f-loc-pos')?.value||''; return l&&p?l+' · '+p:l||p; })(),
     origine:document.getElementById('f-ori').value,
     date_acq:document.getElementById('f-date').value,
     prix:parseFloat(document.getElementById('f-prix').value)||0,
@@ -3156,6 +3176,14 @@ function setDisp(d){
 }
 
 function setSort(s){ state.sort=s; render(); }
+
+function updateSousEmpl(){
+  const lieu = document.getElementById('f-loc-lieu')?.value||'';
+  const sel  = document.getElementById('f-loc-pos');
+  if(!sel) return;
+  const opts = EMPLACEMENTS[lieu]||['Table plein soleil','Table mi-ombre','Terre plein plein soleil'];
+  sel.innerHTML = '<option value="">— Emplacement —</option>'+opts.map(p=>`<option>${p}</option>`).join('');
+}
 
 function openDetailLightbox(arbreId, idx){
   const a = db.arbres.find(x=>x.id===arbreId);
