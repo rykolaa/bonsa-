@@ -1896,6 +1896,48 @@ function openDetail(id){
         <div class="info-block"><div class="info-block-label">Ø Nébari</div><div class="info-block-val">${a.diam_nebari} cm</div></div>
       </div>
 
+      <!-- Historique des mensurations -->
+      ${(()=>{
+        const mesures = (a.mesures||[]).slice().sort((x,y)=>y.date.localeCompare(x.date));
+        if(mesures.length<2) return '';
+        return `<details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--stone);letter-spacing:.04em;text-transform:uppercase;user-select:none;list-style:none;display:flex;align-items:center;gap:5px">
+            <span>▸</span> Historique des mesures (${mesures.length} entrées)
+          </summary>
+          <div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr style="background:var(--sand-light)">
+                  <th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Date</th>
+                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">H.</th>
+                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø T.</th>
+                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Houppier</th>
+                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Nébari</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${mesures.map((m,i)=>{
+                  const prev = mesures[i+1];
+                  const diff = (val,key)=>{
+                    if(!prev||prev[key]===undefined) return '';
+                    const d=val-prev[key];
+                    if(!d) return '';
+                    return \`<span style="color:\${d>0?'#2d5a27':'#b42814'};font-size:9px;margin-left:2px">\${d>0?'+':''}\${d}</span>\`;
+                  };
+                  return \`<tr style="border-bottom:1px solid var(--border);\${i===0?'background:rgba(45,90,39,.04)':''}">
+                    <td style="padding:4px 8px;color:var(--ink)">\${fmtDate(m.date)}</td>
+                    <td style="padding:4px 6px;text-align:right">\${m.hauteur||'—'}cm\${diff(m.hauteur,'hauteur')}</td>
+                    <td style="padding:4px 6px;text-align:right">\${m.diam_tronc||'—'}cm\${diff(m.diam_tronc,'diam_tronc')}</td>
+                    <td style="padding:4px 6px;text-align:right">\${m.diam_houppier||'—'}cm\${diff(m.diam_houppier,'diam_houppier')}</td>
+                    <td style="padding:4px 6px;text-align:right">\${m.diam_nebari||'—'}cm\${diff(m.diam_nebari,'diam_nebari')}</td>
+                  </tr>\`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </details>`;
+      })()}
+
       <!-- Pot actuel -->
       ${dernierPot||dernierRemp?`
       <div class="dp-section-title">Pot actuel</div>
@@ -2247,11 +2289,26 @@ function saveArbre(id){
   };
   if(id){
     const existing = db.arbres.find(a=>a.id===id);
+    // Enregistrer une entrée d'historique si les mensurations ont changé
+    const fields = ['hauteur','diam_tronc','diam_houppier','diam_nebari'];
+    const changed = fields.some(f => existing[f] !== data[f]);
+    if(changed){
+      if(!existing.mesures) existing.mesures = [];
+      const today = new Date().toISOString().split('T')[0];
+      // Remplacer l'entrée du jour si elle existe déjà
+      const idx = existing.mesures.findIndex(m=>m.date===today);
+      const entry = {date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari};
+      if(idx>=0) existing.mesures[idx] = entry;
+      else existing.mesures.unshift(entry);
+    }
     Object.assign(existing,data);
     closeModal();
     openDetail(id);
   } else {
-    data.id=db.nextId++;data.travaux=[];data.photos=[];data.sante_obs=[];data.valuations=[];
+    data.id=db.nextId++;data.travaux=[];data.photos=[];data.sante_obs=[];data.valuations=[];data.mesures=[];
+    // Sauvegarder la mesure initiale
+    const today = new Date().toISOString().split('T')[0];
+    data.mesures.push({date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari});
     db.arbres.push(data);
     closeModal();
   }
