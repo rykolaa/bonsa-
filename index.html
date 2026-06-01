@@ -51,8 +51,13 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 /* MAIN */
 .body{display:flex;flex:1;overflow:hidden}
 .sidebar{width:210px;background:var(--cream);border-right:1px solid var(--border);padding:16px;overflow-y:auto;flex-shrink:0}
-.sidebar-section{margin-bottom:18px}
-.sidebar-sec-title{font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--stone);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.sidebar-section{margin-bottom:4px}
+.sidebar-sec-title{font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--stone);padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;border-radius:4px;transition:.12s}
+.sidebar-sec-title:hover{background:var(--sand-light)}
+.sidebar-sec-title .acc-arrow{font-size:9px;transition:transform .18s;display:inline-block}
+.sidebar-sec-body{overflow:hidden;transition:max-height .2s ease;max-height:0}
+.sidebar-sec-body.open{max-height:600px;padding-top:6px}
+.sidebar-sec-body.open-scroll{max-height:220px;overflow-y:auto;padding-top:6px}
 .flt{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:6px;cursor:pointer;transition:.12s;border:none;background:transparent;width:100%;text-align:left;font-family:var(--ff-body);font-size:13px;color:var(--stone)}
 .flt:hover{background:var(--stone-light);color:var(--ink)}
 .flt.active{background:var(--moss-light);color:var(--moss);font-weight:500}
@@ -355,32 +360,50 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
   </div>
   <div class="body">
     <div class="sidebar" id="sidebar">
+      <!-- Affichage -->
       <div class="sidebar-section">
-        <div class="sidebar-sec-title">Affichage</div>
-        <button class="flt active" id="disp-grid" onclick="setDisp('grid')">⊞ Grille</button>
-        <button class="flt" id="disp-list" onclick="setDisp('list')">≡ Liste</button>
+        <div class="sidebar-sec-title" onclick="toggleAcc('affichage')">Affichage <span class="acc-arrow" id="acc-arrow-affichage">▶</span></div>
+        <div class="sidebar-sec-body" id="acc-affichage">
+          <button class="flt active" id="disp-grid" onclick="setDisp('grid')">⊞ Grille</button>
+          <button class="flt" id="disp-list" onclick="setDisp('list')">≡ Liste</button>
+        </div>
       </div>
+      <!-- Style -->
       <div class="sidebar-section">
-        <div class="sidebar-sec-title">Style</div>
-        <button class="flt active" id="flt-all" onclick="setFlt('all')">Tous <span class="cnt" id="cnt-all">0</span></button>
-        <div id="style-filters"></div>
+        <div class="sidebar-sec-title" onclick="toggleAcc('style')">Style <span class="acc-arrow" id="acc-arrow-style">▶</span></div>
+        <div class="sidebar-sec-body open-scroll" id="acc-style">
+          <button class="flt active" id="flt-all" onclick="setFlt('all')">Tous <span class="cnt" id="cnt-all">0</span></button>
+          <div id="style-filters"></div>
+        </div>
       </div>
+      <!-- Origine -->
       <div class="sidebar-section">
-        <div class="sidebar-sec-title">Origine</div>
-        <div id="origine-filters"></div>
+        <div class="sidebar-sec-title" onclick="toggleAcc('origine')">Origine <span class="acc-arrow" id="acc-arrow-origine">▶</span></div>
+        <div class="sidebar-sec-body" id="acc-origine">
+          <div id="origine-filters"></div>
+        </div>
       </div>
+      <!-- Espèce -->
       <div class="sidebar-section">
-        <div class="sidebar-sec-title">Espèce</div>
-        <div id="espece-filters"></div>
+        <div class="sidebar-sec-title" onclick="toggleAcc('espece')">Espèce <span class="acc-arrow" id="acc-arrow-espece">▶</span></div>
+        <div class="sidebar-sec-body open-scroll" id="acc-espece">
+          <div id="espece-filters"></div>
+        </div>
       </div>
+      <!-- Taille -->
       <div class="sidebar-section">
-        <div class="sidebar-sec-title">Taille</div>
-        <div id="taille-filters"></div>
+        <div class="sidebar-sec-title" onclick="toggleAcc('taille')">Taille <span class="acc-arrow" id="acc-arrow-taille">▶</span></div>
+        <div class="sidebar-sec-body" id="acc-taille">
+          <div id="taille-filters"></div>
+        </div>
       </div>
+      <!-- Alertes -->
       <div class="sidebar-section">
-        <div class="sidebar-sec-title">Alertes</div>
-        <button class="flt" id="flt-urgent" onclick="setFlt('urgent')">🔔 Soins urgents <span class="cnt" id="cnt-urgent">0</span></button>
-        <button class="flt" id="flt-sante-low" onclick="setFlt('sante-low')">⚠️ Santé &lt; 70% <span class="cnt" id="cnt-sante-low">0</span></button>
+        <div class="sidebar-sec-title" onclick="toggleAcc('alertes')">Alertes <span class="acc-arrow" id="acc-arrow-alertes">▶</span></div>
+        <div class="sidebar-sec-body" id="acc-alertes">
+          <button class="flt" id="flt-urgent" onclick="setFlt('urgent')">🔔 Soins urgents <span class="cnt" id="cnt-urgent">0</span></button>
+          <button class="flt" id="flt-sante-low" onclick="setFlt('sante-low')">⚠️ Santé &lt; 70% <span class="cnt" id="cnt-sante-low">0</span></button>
+        </div>
       </div>
     </div>
     <div class="content" id="content"></div>
@@ -707,6 +730,7 @@ function handleEspeceChange(sel){
 }
 
 function majLatinField(){
+  const esp = document.getElementById('f-espece')?.value || '';
   const latin = getLatin(esp);
   const inp = document.getElementById('f-nom-latin');
   const wrap = inp?.closest('.fg');
@@ -714,7 +738,7 @@ function majLatinField(){
   if(!latin || esp==='Autre'){
     wrap.style.display='block';
     const lbl = wrap.querySelector('label');
-    if(lbl) lbl.innerHTML = 'Nom latin <span style="font-size:11px;color:var(--stone);font-style:italic">(non défini pour cette espèce)</span>';
+    if(lbl) lbl.innerHTML = 'Nom latin <span style="font-size:11px;color:var(--stone);font-style:italic">'+(latin?'(surcharge le nom de l\'espèce)':'(non défini pour cette espèce)')+'</span>';
   } else {
     wrap.style.display='none';
     if(inp) inp.value='';
@@ -722,7 +746,7 @@ function majLatinField(){
 }
 
 let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], cultivars:[], travaux_types:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
-let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'num'};
+let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'num', acc:{affichage:false, style:true, origine:true, espece:true, taille:false, alertes:false}};
 const etiqSel = new Set();
 
 function fmtDate(d){
@@ -889,6 +913,7 @@ function render(){
   else if(state.page==='sante') renderSante(c);
   else renderStats(c);
   updateEtiqFab();
+  if(state.page==='collection') applyAcc();
 }
 
 function toggleSoinsAlert(el){
@@ -3237,6 +3262,29 @@ function setDisp(d){
 }
 
 function setSort(s){ state.sort=s; render(); }
+
+function toggleAcc(key){
+  state.acc[key] = !state.acc[key];
+  applyAcc();
+}
+
+function applyAcc(){
+  ['affichage','style','origine','espece','taille','alertes'].forEach(key=>{
+    const body  = document.getElementById('acc-'+key);
+    const arrow = document.getElementById('acc-arrow-'+key);
+    if(!body) return;
+    const open = state.acc[key];
+    // Preserve open-scroll class
+    const isScroll = body.classList.contains('open-scroll');
+    if(open){
+      body.classList.add(isScroll ? 'open-scroll' : 'open');
+      body.style.maxHeight = isScroll ? '220px' : '600px';
+    } else {
+      body.style.maxHeight = '0';
+    }
+    if(arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+  });
+}
 
 function selectionnerTous(){
   const filtered = getFiltered();
