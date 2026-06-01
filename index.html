@@ -78,6 +78,8 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .vtgl:hover{border-color:var(--moss-mid);color:var(--moss-mid)}
 .vtgl.active{background:var(--moss-light);border-color:var(--moss-mid);color:var(--moss)}
 .sort-sel{padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:var(--ff-body);font-size:12px;color:var(--ink);outline:none;cursor:pointer}
+.masse-btn{display:block;width:100%;text-align:left;background:none;border:none;padding:7px 10px;font-size:13px;cursor:pointer;border-radius:6px;color:var(--ink)}
+.masse-btn:hover{background:var(--sand-light)}
 /* GRID */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
 .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;cursor:pointer;transition:.18s}
@@ -392,12 +394,29 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
   <div class="modal" id="modal" onclick="event.stopPropagation()"></div>
 </div>
 
-<!-- Bouton flottant sélection étiquettes -->
-<div id="etiq-fab" style="display:none;position:fixed;bottom:24px;right:24px;z-index:150;display:none;flex-direction:column;align-items:flex-end;gap:8px">
+<!-- Bouton flottant sélection étiquettes / actions de masse -->
+<div id="etiq-fab" style="display:none;position:fixed;bottom:24px;right:24px;z-index:150;flex-direction:column;align-items:flex-end;gap:8px">
   <div style="background:var(--ink);color:#fff;font-size:12px;padding:4px 10px;border-radius:12px;opacity:.85" id="etiq-fab-count"></div>
-  <div style="display:flex;gap:8px">
+  <!-- Menu actions de masse (affiché/masqué) -->
+  <div id="masse-menu" style="display:none;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:8px;min-width:230px">
+    <div style="font-size:11px;font-weight:700;color:var(--stone);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px 8px">Actions sur la sélection</div>
+    <button onclick="masseModifier('sante')"    class="masse-btn">❤️ Modifier la santé</button>
+    <button onclick="masseModifier('stade')"    class="masse-btn">📈 Modifier le stade</button>
+    <button onclick="masseModifier('origine')"  class="masse-btn">🌍 Modifier l'origine</button>
+    <button onclick="masseModifier('localisation')" class="masse-btn">📍 Modifier la localisation</button>
+    <button onclick="masseModifier('style')"    class="masse-btn">🎋 Modifier le style</button>
+    <button onclick="masseModifier('espece')"   class="masse-btn">🌿 Modifier l'espèce</button>
+    <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
+    <button onclick="masseAjouterTravail()"     class="masse-btn">🔧 Ajouter un travail planifié</button>
+    <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
+    <button onclick="masseSante()"              class="masse-btn">📊 Normaliser la santé à 85%</button>
+    <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
+    <button onclick="masseSupprimer()"          class="masse-btn" style="color:#b42814">🗑 Supprimer les arbres</button>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
     <button onclick="etiqSel.clear();render()" style="background:#fff;color:var(--stone);border:1px solid var(--border);border-radius:20px;padding:10px 16px;font-size:13px;cursor:pointer">✕ Effacer</button>
-    <button onclick="imprimerEtiquettesSelection()" style="background:var(--moss);color:#fff;border:none;border-radius:20px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.2)">🏷️ Imprimer la sélection</button>
+    <button onclick="toggleMasseMenu()" style="background:var(--sand);color:var(--ink);border:1px solid var(--border);border-radius:20px;padding:10px 16px;font-size:13px;cursor:pointer">⚡ Actions</button>
+    <button onclick="imprimerEtiquettesSelection()" style="background:var(--moss);color:#fff;border:none;border-radius:20px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.2)">🏷️ Étiquettes</button>
   </div>
 </div>
 
@@ -1086,8 +1105,14 @@ function renderCollection(c){
     </div>`;
   }
 
+  const _allIds = filtered.map(a=>a.id);
+  const _allSel = _allIds.length>0 && _allIds.every(id=>etiqSel.has(id));
   html+=`<div class="view-toolbar"><div style="font-size:13px;color:var(--stone)">${filtered.length} arbre${filtered.length>1?'s':''} affiché${filtered.length>1?'s':''}</div>
     <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="selectionnerTous()" title="${_allSel?'Tout désélectionner':'Tout sélectionner'}"
+        style="font-size:12px;padding:4px 10px;background:${_allSel?'var(--moss)':'#fff'};color:${_allSel?'#fff':'var(--stone)'};border:1px solid ${_allSel?'var(--moss)':'var(--border)'};border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">
+        <span style="font-size:14px">${_allSel?'☑':'☐'}</span> ${_allSel?'Tout désélect.':'Tout sélect.'}
+      </button>
       <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
         <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
         <option value="nom"    ${state.sort==='nom'   ?'selected':''}>🔤 Nom A→Z</option>
@@ -1797,7 +1822,7 @@ function openDetail(id){
           onmouseenter="showStyleTooltipData(event,this)"
           onmouseleave="hideStyleTooltip()">
           <img src="${styleData.img}" style="width:60px;height:60px;object-fit:contain;border-radius:6px;background:var(--moss-light)">
-          <div style="position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.4);color:#fff;font-size:8px;border-radius:3px;padding:1px 3px">ℹ</div>
+          <div style="position:absolute;bottom:2px;right:2px;background:rgba(45,90,39,.85);color:#fff;font-size:9px;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-style:italic">i</div>
         </div>` : ''}
       <div>
         <div style="font-size:13px;font-weight:500">${styleObj.kanji} ${styleObj.romaji}</div>
@@ -1897,45 +1922,24 @@ function openDetail(id){
       </div>
 
       <!-- Historique des mensurations -->
+      <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:11px;font-weight:600;color:var(--stone);letter-spacing:.04em;text-transform:uppercase">${(a.mesures||[]).length} mesure${(a.mesures||[]).length!==1?'s':''} enregistrée${(a.mesures||[]).length!==1?'s':''}</div>
+        <button onclick="enregistrerMesures(${a.id})" style="font-size:11px;padding:3px 10px;background:var(--moss-light);border:1px solid rgba(45,90,39,.3);border-radius:20px;color:var(--moss);cursor:pointer;font-weight:500">📏 Enregistrer aujourd'hui</button>
+      </div>
       ${(()=>{
         const mesures = (a.mesures||[]).slice().sort((x,y)=>y.date.localeCompare(x.date));
-        if(mesures.length<2) return '';
-        return `<details style="margin-top:8px">
-          <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--stone);letter-spacing:.04em;text-transform:uppercase;user-select:none;list-style:none;display:flex;align-items:center;gap:5px">
-            <span>▸</span> Historique des mesures (${mesures.length} entrées)
-          </summary>
-          <div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px">
-            <table style="width:100%;border-collapse:collapse">
-              <thead>
-                <tr style="background:var(--sand-light)">
-                  <th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Date</th>
-                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">H.</th>
-                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø T.</th>
-                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Houppier</th>
-                  <th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Nébari</th>
-                </tr>
-              </thead>
-              <tbody>
-                \${mesures.map((m,i)=>{
-                  const prev = mesures[i+1];
-                  const diff = (val,key)=>{
-                    if(!prev||prev[key]===undefined) return '';
-                    const d=val-prev[key];
-                    if(!d) return '';
-                    return \`<span style="color:\${d>0?'#2d5a27':'#b42814'};font-size:9px;margin-left:2px">\${d>0?'+':''}\${d}</span>\`;
-                  };
-                  return \`<tr style="border-bottom:1px solid var(--border);\${i===0?'background:rgba(45,90,39,.04)':''}">
-                    <td style="padding:4px 8px;color:var(--ink)">\${fmtDate(m.date)}</td>
-                    <td style="padding:4px 6px;text-align:right">\${m.hauteur||'—'}cm\${diff(m.hauteur,'hauteur')}</td>
-                    <td style="padding:4px 6px;text-align:right">\${m.diam_tronc||'—'}cm\${diff(m.diam_tronc,'diam_tronc')}</td>
-                    <td style="padding:4px 6px;text-align:right">\${m.diam_houppier||'—'}cm\${diff(m.diam_houppier,'diam_houppier')}</td>
-                    <td style="padding:4px 6px;text-align:right">\${m.diam_nebari||'—'}cm\${diff(m.diam_nebari,'diam_nebari')}</td>
-                  </tr>\`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </details>`;
+        if(!mesures.length) return '<div style="font-size:11px;color:var(--stone);margin-top:6px;font-style:italic">Aucune mesure enregistrée — cliquez sur le bouton pour en créer une.</div>';
+        const rows = mesures.map((m,i)=>{
+          const prev = mesures[i+1];
+          const diff = (val,key)=>{
+            if(!prev||prev[key]===undefined) return '';
+            const d=Math.round((val-prev[key])*10)/10;
+            if(!d) return '';
+            return '<span style="color:'+(d>0?'#2d5a27':'#b42814')+';font-size:9px;margin-left:2px">'+(d>0?'+':'')+d+'</span>';
+          };
+          return '<tr style="border-bottom:1px solid var(--border);'+(i===0?'background:rgba(45,90,39,.04)':'')+'"><td style="padding:4px 8px;color:var(--ink)">'+fmtDate(m.date)+'</td><td style="padding:4px 6px;text-align:right">'+(m.hauteur||'—')+'cm'+diff(m.hauteur,'hauteur')+'</td><td style="padding:4px 6px;text-align:right">'+(m.diam_tronc||'—')+'cm'+diff(m.diam_tronc,'diam_tronc')+'</td><td style="padding:4px 6px;text-align:right">'+(m.diam_houppier||'—')+'cm'+diff(m.diam_houppier,'diam_houppier')+'</td><td style="padding:4px 6px;text-align:right">'+(m.diam_nebari||'—')+'cm'+diff(m.diam_nebari,'diam_nebari')+'</td></tr>';
+        }).join('');
+        return '<div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--sand-light)"><th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Date</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">H.</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Tronc</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Houppier</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Nébari</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
       })()}
 
       <!-- Pot actuel -->
@@ -3233,6 +3237,28 @@ function setDisp(d){
 }
 
 function setSort(s){ state.sort=s; render(); }
+
+function selectionnerTous(){
+  const filtered = getFiltered();
+  const ids = filtered.map(a=>a.id);
+  const allSel = ids.length>0 && ids.every(id=>etiqSel.has(id));
+  if(allSel){ ids.forEach(id=>etiqSel.delete(id)); }
+  else { ids.forEach(id=>etiqSel.add(id)); }
+  render();
+}
+function enregistrerMesures(arbreId){
+  const a = db.arbres.find(x=>x.id===arbreId);
+  if(!a) return;
+  if(!a.mesures) a.mesures = [];
+  const today = new Date().toISOString().split('T')[0];
+  const entry = {date:today, hauteur:a.hauteur, diam_tronc:a.diam_tronc, diam_houppier:a.diam_houppier, diam_nebari:a.diam_nebari};
+  const idx = a.mesures.findIndex(m=>m.date===today);
+  if(idx>=0){ a.mesures[idx]=entry; }
+  else { a.mesures.unshift(entry); }
+  autoSave();
+  openDetail(arbreId);
+}
+
 
 function updateSousEmpl(){
   const lieu = document.getElementById('f-loc-lieu')?.value||'';
@@ -5531,6 +5557,152 @@ function updateEtiqFab(){
     fab.style.display = 'none';
   }
 }
+
+function toggleMasseMenu(){
+  const m = document.getElementById('masse-menu');
+  m.style.display = m.style.display==='none' ? 'block' : 'none';
+}
+
+function masseModifier(champ){
+  document.getElementById('masse-menu').style.display='none';
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+
+  const labels = {
+    sante:'Santé (0–100)', stade:'Stade de culture', origine:'Origine',
+    localisation:'Localisation', style:'Style', espece:'Espèce'
+  };
+
+  let inputHTML = '';
+  if(champ==='sante'){
+    inputHTML = `<input id="mv-val" type="number" min="0" max="100" value="85" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">`;
+  } else if(champ==='stade'){
+    inputHTML = `<select id="mv-val" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">${STADES.map(s=>`<option>${s}</option>`).join('')}</select>`;
+  } else if(champ==='origine'){
+    inputHTML = `<select id="mv-val" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">${ORIGINES.map(o=>`<option>${o}</option>`).join('')}</select>`;
+  } else if(champ==='style'){
+    inputHTML = `<select id="mv-val" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">${STYLES.map(s=>`<option value="${s.fr}">${s.kanji} ${s.romaji} — ${s.fr}</option>`).join('')}</select>`;
+  } else if(champ==='localisation'){
+    inputHTML = `<div style="display:flex;gap:6px"><select id="mv-loc-lieu" onchange="mvUpdatePos()" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px"><option value="">— Lieu —</option>${Object.keys(EMPLACEMENTS).map(l=>`<option>${l}</option>`).join('')}</select><select id="mv-loc-pos" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px"><option value="">— Emplacement —</option>${(EMPLACEMENTS[Object.keys(EMPLACEMENTS)[0]]||[]).map(p=>`<option>${p}</option>`).join('')}</select></div>`;
+  } else {
+    inputHTML = `<input id="mv-val" type="text" placeholder="Valeur" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">`;
+  }
+
+  const m = document.getElementById('modal');
+  const ov = document.getElementById('modal-overlay');
+  m.innerHTML = `
+    <div style="padding:24px;max-width:420px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px">Modifier : ${labels[champ]}</div>
+      <div style="font-size:13px;color:var(--stone);margin-bottom:12px">${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
+      <div style="margin-bottom:16px">${inputHTML}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="closeModal()" style="padding:8px 16px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer">Annuler</button>
+        <button onclick="masseAppliquer('${champ}')" style="padding:8px 18px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Appliquer</button>
+      </div>
+    </div>`;
+  ov.style.display='flex';
+}
+
+function mvUpdatePos(){
+  const lieu = document.getElementById('mv-loc-lieu')?.value||'';
+  const sel  = document.getElementById('mv-loc-pos');
+  if(!sel) return;
+  const opts = EMPLACEMENTS[lieu]||['Table plein soleil','Table mi-ombre','Terre plein plein soleil'];
+  sel.innerHTML = '<option value="">— Emplacement —</option>'+opts.map(p=>`<option>${p}</option>`).join('');
+}
+
+function masseAppliquer(champ){
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  let val;
+  if(champ==='localisation'){
+    const l = document.getElementById('mv-loc-lieu')?.value||'';
+    const p = document.getElementById('mv-loc-pos')?.value||'';
+    val = l&&p ? l+' · '+p : l||p;
+  } else {
+    val = document.getElementById('mv-val')?.value;
+  }
+  if(val===undefined||val==='') return closeModal();
+  if(champ==='sante') val = parseInt(val)||85;
+  arbres.forEach(a=>{ a[champ]=val; });
+  autoSave();
+  closeModal();
+  render();
+  etiqSel.clear();
+  render();
+}
+
+function masseAjouterTravail(){
+  document.getElementById('masse-menu').style.display='none';
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+  const today = new Date().toISOString().split('T')[0];
+  const TYPES_TRAVAUX = ['Rempotage','Taille','Déligature','Ligature','Traitement phytosanitaire','Fertilisation','Arrosage','Autre'];
+  const m = document.getElementById('modal');
+  const ov = document.getElementById('modal-overlay');
+  m.innerHTML = `
+    <div style="padding:24px;max-width:420px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px">Ajouter un travail planifié</div>
+      <div style="font-size:13px;color:var(--stone);margin-bottom:12px">${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Type de travail</label>
+          <select id="mt-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TYPES_TRAVAUX.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Date prévue</label>
+          <input id="mt-date" type="date" value="${today}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Notes</label>
+          <input id="mt-notes" type="text" placeholder="Optionnel" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="closeModal()" style="padding:8px 16px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer">Annuler</button>
+        <button onclick="masseAppliquerTravail()" style="padding:8px 18px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Planifier</button>
+      </div>
+    </div>`;
+  ov.style.display='flex';
+}
+
+function masseAppliquerTravail(){
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const type  = document.getElementById('mt-type')?.value||'';
+  const date  = document.getElementById('mt-date')?.value||'';
+  const notes = document.getElementById('mt-notes')?.value||'';
+  if(!type||!date) return;
+  arbres.forEach(a=>{
+    if(!a.soins_planifies) a.soins_planifies=[];
+    a.soins_planifies.push({type,date,notes,id:'sp'+Date.now()+Math.random().toString(36).slice(2)});
+    // Mettre à jour prochain_soin si plus tôt
+    if(!a.prochain_soin || date < a.prochain_soin){ a.prochain_soin=date; a.type_soin=type; }
+  });
+  autoSave();
+  closeModal();
+  etiqSel.clear();
+  render();
+}
+
+function masseSante(){
+  document.getElementById('masse-menu').style.display='none';
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!confirm('Mettre la santé à 85% pour '+arbres.length+' arbre'+(arbres.length>1?'s':'')+' ?')) return;
+  arbres.forEach(a=>{ a.sante=85; });
+  autoSave();
+  etiqSel.clear();
+  render();
+}
+
+function masseSupprimer(){
+  document.getElementById('masse-menu').style.display='none';
+  const ids = [...etiqSel];
+  const n = ids.length;
+  if(!confirm('Supprimer définitivement '+n+' arbre'+(n>1?'s':'')+' ? Cette action est irréversible.')) return;
+  db.arbres = db.arbres.filter(a=>!ids.includes(a.id));
+  autoSave();
+  etiqSel.clear();
+  render();
+}
+
 
 function imprimerEtiquettesSelection(){
   const ids = [...etiqSel];
