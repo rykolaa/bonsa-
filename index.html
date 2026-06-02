@@ -870,13 +870,13 @@ function getFiltered(){
   const q = document.getElementById('search').value.toLowerCase();
   const arr = db.arbres.filter(a=>{
     if(q){
-      const styleInfo = STYLES.find(x=>x.fr===a.style||x.romaji===a.style);
+      const _sval=(typeof a.style==='object'&&a.style!==null)?(a.style.fr||a.style.romaji||''):(a.style||''); const styleInfo = STYLES.find(x=>x.fr===_sval||x.romaji===_sval);
       const styleRomaji = styleInfo ? styleInfo.romaji.toLowerCase() : '';
       const styleKanji  = styleInfo ? styleInfo.kanji : '';
       const hi = getHauteurInfo(a.hauteur);
       const nomTaille = hi ? hi.nom.toLowerCase() : '';
       if(!a.nom.toLowerCase().includes(q) && !a.espece.toLowerCase().includes(q)
-        && !a.style.toLowerCase().includes(q) && !a.num.toLowerCase().includes(q)
+        && !_sval.toLowerCase().includes(q) && !a.num.toLowerCase().includes(q)
         && !styleRomaji.includes(q) && !styleKanji.includes(q)
         && !nomTaille.includes(q)) return false;
     }
@@ -2299,7 +2299,7 @@ function showArbreModal(a){
       <div class="fg">
         <label>Style</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <select id="f-style" style="flex:1" onchange="updateStylePreview()">${STYLES.map(s=>`<option value="${s.fr}" ${isEdit&&(a.style===s.fr||a.style===s.romaji||a.style===s.kanji)?'selected':''}>${s.kanji}  ${s.romaji} — ${s.fr}</option>`).join('')}</select>
+          <select id="f-style" style="flex:1" onchange="updateStylePreview()">${(()=>{ const _sv=(typeof a.style==='object'&&a.style!==null)?(a.style.fr||a.style.romaji||''):(a.style||''); return STYLES.map(s=>`<option value="${s.fr}" ${isEdit&&(_sv===s.fr||_sv===s.romaji||_sv===s.kanji)?'selected':''}>${s.kanji}  ${s.romaji} — ${s.fr}</option>`).join(''); })()}</select>
           <div id="f-style-preview" style="position:relative;flex-shrink:0;cursor:help" onmouseenter="showStyleTooltip(event)" onmouseleave="hideStyleTooltip()">
             <img id="f-style-img" src="" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#f9f7f3;display:block">
             <div id="f-style-tooltip" style="display:none;position:fixed;z-index:9999;background:var(--ink);color:#fff;border-radius:8px;padding:10px 12px;font-size:12px;max-width:260px;box-shadow:0 4px 20px rgba(0,0,0,.3);line-height:1.5;pointer-events:none"></div>
