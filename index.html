@@ -249,6 +249,15 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .lightbox-placeholder{width:400px;height:300px;display:flex;align-items:center;justify-content:center;font-size:100px}
 .lightbox-caption{color:rgba(247,244,238,.8);font-size:13px;text-align:center;max-width:600px}
 .lightbox-nav{display:flex;gap:12px;align-items:center}
+.diaporama{position:fixed;inset:0;background:#000;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;user-select:none}
+.diaporama-img{max-width:100vw;max-height:82vh;object-fit:contain;display:block;transition:opacity .5s ease}
+.diaporama-img.fade{opacity:0}
+.diaporama-caption{position:absolute;bottom:0;left:0;right:0;padding:16px 24px;background:linear-gradient(transparent,rgba(0,0,0,.75));color:#fff;text-align:center}
+.diaporama-controls{position:absolute;top:12px;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 16px}
+.diapo-btn{background:rgba(255,255,255,.12);border:none;color:#fff;border-radius:50%;width:40px;height:40px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s;flex-shrink:0}
+.diapo-btn:hover{background:rgba(255,255,255,.28)}
+.diapo-btn:disabled{opacity:.3;cursor:default}
+.diapo-progress{position:absolute;bottom:0;left:0;height:3px;background:rgba(255,255,255,.6);transition:width linear}
 .lb-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
 .lb-btn:hover{background:rgba(255,255,255,.22)}
 .lb-close{position:absolute;top:18px;right:22px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -335,8 +344,7 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
         📂 Charger
         <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this)">
       </label>
-      <button class="btn-add" style="background:#0061ff" onclick="dropboxSauvegarder()" title="Envoyer vers Dropbox">☁️ ↑ Dropbox</button>
-      <button class="btn-add" style="background:#0061ff;filter:brightness(.85)" onclick="dropboxCharger()" title="Charger depuis Dropbox">☁️ ↓ Dropbox</button>
+      <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
     </div>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
     <!-- Bouton menu mobile -->
@@ -359,8 +367,7 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
       📂 Charger sauvegarde
       <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this);toggleMobileMenu()">
     </label>
-    <button class="mob-btn" style="background:#0061ff" onclick="dropboxSauvegarder();toggleMobileMenu()">☁️ ↑ Envoyer vers Dropbox</button>
-    <button class="mob-btn" style="background:#0061ff;filter:brightness(.85)" onclick="dropboxCharger();toggleMobileMenu()">☁️ ↓ Charger depuis Dropbox</button>
+    <button class="mob-btn" style="background:#7c3aed" onclick="ouvrirSyncModal();toggleMobileMenu()">🔄 Synchroniser</button>
   </div>
   <div class="body">
     <div class="sidebar" id="sidebar">
@@ -1316,6 +1323,7 @@ function renderGalerie(c){
         <option value="">Tous les types</option>
         ${types.map(t=>`<option value="${t}" ${f.type===t?'selected':''}>${t}</option>`).join('')}
       </select>`:''}
+      <button class="btn" style="font-size:12px;padding:6px 14px;background:#1a1a1a;color:#fff;border:none" onclick="ouvrirDiaporama()">▶ Diaporama</button>
       <button class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="openPhotoModal(0)">＋ Ajouter des photos</button>
     </div>
   </div>`;
@@ -1403,6 +1411,146 @@ function showLightbox(){
 }
 function moveLb(dir){lbIdx=Math.max(0,Math.min(lbPhotos.length-1,lbIdx+dir));showLightbox();}
 function closeLightbox(){const lb=document.getElementById('lightbox-overlay');if(lb)lb.style.display='none';}
+
+// ── DIAPORAMA ─────────────────────────────────────────────────────────────────
+let _diapoTimer=null, _diapoIdx=0, _diapoPhotos=[], _diapoPlaying=false, _diapoVitesse=4000;
+
+function ouvrirDiaporamaArbre(arbreId){
+  const a = db.arbres.find(x=>x.id===arbreId);
+  if(!a) return;
+  const photos = (a.photos||[]).filter(p=>p.dataUrl)
+    .map(p=>({...p, arbre:a.nom, arbreId:a.id, emoji:getEmoji(a.espece)}))
+    .sort((x,y)=>new Date(x.date)-new Date(y.date)); // plus ancienne en premier
+  if(!photos.length){ alert('Cet arbre n\'a pas de photos'); return; }
+  _diapoPhotos = photos;
+  _diapoIdx = 0;
+  _diapoPlaying = true;
+  let el = document.getElementById('diapo-overlay');
+  if(!el){ el=document.createElement('div'); el.id='diapo-overlay'; el.className='diaporama'; document.body.appendChild(el); }
+  el.style.display='flex';
+  _diapoRender();
+  _diapoLancer();
+  document._diapoKeyHandler = e=>{
+    if(e.key==='Escape') fermerDiaporama();
+    else if(e.key==='ArrowRight'||e.key===' ') _diapoNav(1);
+    else if(e.key==='ArrowLeft') _diapoNav(-1);
+    else if(e.key==='p'||e.key==='P') _diapoTogglePlay();
+  };
+  document.addEventListener('keydown', document._diapoKeyHandler);
+}
+
+function ouvrirDiaporama(){
+  // Photos triées de la plus ancienne à la plus récente
+  if(!state.galFlt) state.galFlt={arbre:'',type:''};
+  const f = state.galFlt;
+  let photos = getAllPhotos().filter(p=>p.dataUrl);
+  if(f.arbre) photos=photos.filter(p=>p.arbreId===parseInt(f.arbre));
+  if(f.type) photos=photos.filter(p=>(p.type||'')===f.type);
+  // Inverser : plus ancienne en premier
+  _diapoPhotos = photos.slice().reverse();
+  if(!_diapoPhotos.length){ alert('Aucune photo à afficher'); return; }
+  _diapoIdx = 0;
+  _diapoPlaying = true;
+
+  // Créer l'overlay
+  let el = document.getElementById('diapo-overlay');
+  if(!el){ el=document.createElement('div'); el.id='diapo-overlay'; el.className='diaporama'; document.body.appendChild(el); }
+  el.style.display='flex';
+  _diapoRender();
+  _diapoLancer();
+
+  // Clavier
+  document._diapoKeyHandler = e=>{
+    if(e.key==='Escape') fermerDiaporama();
+    else if(e.key==='ArrowRight'||e.key===' ') _diapoNav(1);
+    else if(e.key==='ArrowLeft') _diapoNav(-1);
+    else if(e.key==='p'||e.key==='P') _diapoTogglePlay();
+  };
+  document.addEventListener('keydown', document._diapoKeyHandler);
+}
+
+function _diapoRender(){
+  const el = document.getElementById('diapo-overlay');
+  if(!el) return;
+  const p = _diapoPhotos[_diapoIdx];
+  if(!p) return;
+  const total = _diapoPhotos.length;
+  const vitesses = [{v:2000,l:'Rapide'},{v:4000,l:'Normal'},{v:7000,l:'Lent'},{v:12000,l:'Très lent'}];
+
+  el.innerHTML = `
+    <!-- Bouton fermer -->
+    <button class="diapo-btn" onclick="fermerDiaporama()" style="position:absolute;top:14px;right:16px;z-index:10;background:rgba(255,255,255,.15)">✕</button>
+
+    <!-- Image -->
+    <img id="diapo-img" class="diaporama-img" src="${p.dataUrl}" alt="${p.arbre}">
+
+    <!-- Barre de progression auto -->
+    <div id="diapo-progress" class="diapo-progress" style="width:0"></div>
+
+    <!-- Contrôles haut -->
+    <div class="diaporama-controls" style="background:rgba(0,0,0,.45);border-radius:30px;padding:6px 14px;top:14px;left:50%;transform:translateX(-50%);width:auto;gap:8px">
+      <button class="diapo-btn" onclick="_diapoNav(-1)" ${_diapoIdx===0?'disabled':''} style="width:32px;height:32px;font-size:16px">‹</button>
+      <button class="diapo-btn" id="diapo-play-btn" onclick="_diapoTogglePlay()" style="width:32px;height:32px;font-size:15px">${_diapoPlaying?'⏸':'▶'}</button>
+      <button class="diapo-btn" onclick="_diapoNav(1)" ${_diapoIdx===total-1?'disabled':''} style="width:32px;height:32px;font-size:16px">›</button>
+      <span style="color:rgba(255,255,255,.6);font-size:12px;margin:0 4px">${_diapoIdx+1} / ${total}</span>
+      <select id="diapo-vitesse" onchange="_diapoSetVitesse(parseInt(this.value))" style="background:rgba(255,255,255,.12);border:none;color:#fff;border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer">
+        ${vitesses.map(v=>`<option value="${v.v}" ${_diapoVitesse===v.v?'selected':''}>${v.l}</option>`).join('')}
+      </select>
+    </div>
+
+    <!-- Légende bas -->
+    <div class="diaporama-caption">
+      <div style="font-size:16px;font-weight:500">${p.emoji||''} ${p.arbre}</div>
+      <div style="font-size:13px;opacity:.7;margin-top:3px">
+        ${p.date?'📅 '+fmtDate(p.date):''}${p.type?' · '+p.type:''}
+      </div>
+      ${p.desc?`<div style="font-size:12px;opacity:.6;font-style:italic;margin-top:2px">"${p.desc}"</div>`:''}
+    </div>`;
+}
+
+function _diapoLancer(){
+  clearInterval(_diapoTimer);
+  if(!_diapoPlaying) return;
+  // Animer la barre de progression
+  const bar = document.getElementById('diapo-progress');
+  if(bar){ bar.style.transition='none'; bar.style.width='0'; setTimeout(()=>{ bar.style.transition=`width ${_diapoVitesse}ms linear`; bar.style.width='100%'; },30); }
+  _diapoTimer = setTimeout(()=>{ if(_diapoIdx < _diapoPhotos.length-1){ _diapoNav(1); } else { _diapoPlaying=false; _diapoRender(); } }, _diapoVitesse);
+}
+
+function _diapoNav(dir){
+  clearInterval(_diapoTimer); clearTimeout(_diapoTimer);
+  const img = document.getElementById('diapo-img');
+  if(img) img.classList.add('fade');
+  setTimeout(()=>{
+    _diapoIdx = Math.max(0, Math.min(_diapoPhotos.length-1, _diapoIdx+dir));
+    _diapoRender();
+    const img2 = document.getElementById('diapo-img');
+    if(img2) requestAnimationFrame(()=>img2.classList.remove('fade'));
+    if(_diapoPlaying) _diapoLancer();
+  }, 220);
+}
+
+function _diapoTogglePlay(){
+  _diapoPlaying = !_diapoPlaying;
+  const btn = document.getElementById('diapo-play-btn');
+  if(btn) btn.textContent = _diapoPlaying ? '⏸' : '▶';
+  if(_diapoPlaying) _diapoLancer();
+  else { clearTimeout(_diapoTimer); const bar=document.getElementById('diapo-progress'); if(bar) bar.style.transition='none'; }
+}
+
+function _diapoSetVitesse(v){
+  _diapoVitesse = v;
+  if(_diapoPlaying){ clearTimeout(_diapoTimer); _diapoLancer(); }
+}
+
+function fermerDiaporama(){
+  clearTimeout(_diapoTimer);
+  _diapoPlaying = false;
+  const el = document.getElementById('diapo-overlay');
+  if(el) el.style.display='none';
+  document.removeEventListener('keydown', document._diapoKeyHandler);
+}
+
 
 function openPhotoModal(arbreId){
   const m = document.getElementById('modal');
@@ -1633,9 +1781,8 @@ async function savePhotos(){
       reader.readAsDataURL(file);
     });
 
-    // Redimensionner : max 1920px côté long, qualité 0.85
-    // On applique aussi la correction de rotation EXIF (fonction déjà existante)
-    const dataUrl = await compresserPhoto(dataUrlBrut, 1920, 0.85);
+    // Redimensionner : max 1200px côté long, qualité 0.80
+    const dataUrl = await compresserPhoto(dataUrlBrut, 1200, 0.80);
 
     totalAvant  += Math.round(dataUrlBrut.length * 0.75 / 1024); // taille originale en KB
     totalApres  += Math.round(dataUrl.length    * 0.75 / 1024); // taille compressée en KB
@@ -1884,6 +2031,7 @@ function openDetail(id){
       <button class="btn btn-icon" onclick="openEditModal(${a.id})" title="Modifier">✏️</button>
       <button class="btn btn-icon" onclick="openTravailModal(${a.id})" title="Ajouter travail">✂️</button>
       <button class="btn btn-icon" onclick="openPhotoModal(${a.id})" title="Ajouter photo">📷</button>
+      <button class="btn btn-icon" onclick="ouvrirDiaporamaArbre(${a.id})" title="Diaporama de cet arbre" ${!(a.photos||[]).some(p=>p.dataUrl)?'disabled style="opacity:.35"':''}>▶</button>
       <button class="btn btn-icon" style="border:none;font-size:22px;line-height:1" onclick="closeDetail()">×</button>
     </div>
   </div>
@@ -3366,6 +3514,7 @@ function renderAtelier(c){
     {id:'ressources', label:'🧪 Ressources'},
     {id:'especes',    label:'🌿 Espèces'},
     {id:'travaux',    label:'✂️ Types de travaux'},
+    {id:'photos',     label:'📸 Photos'},
   ];
   let html = `<div class="atelier-tabs">${tabs.map(t=>`<button class="atelier-tab ${tab===t.id?'active':''}" onclick="state.atelierTab='${t.id}';renderAtelier(document.getElementById('content'))">${t.label}</button>`).join('')}</div>`;
   c.innerHTML = html;
@@ -3374,6 +3523,7 @@ function renderAtelier(c){
   else if(tab==='ressources') renderRessources(c);
   else if(tab==='especes') renderEspeces(c);
   else if(tab==='travaux') renderTravaux(c);
+  else if(tab==='photos') renderPhotosAtelier(c);
   else renderSubstrats(c);
 }
 
@@ -6069,6 +6219,338 @@ async function dropboxCharger(){
     }
     console.error(e);
   }
+}
+
+// ── SYNCHRONISATION SIMPLE (JSONBin.io) ───────────────────────────────────────
+const JSONBIN_KEY = '$2a$10$wQzFvEpB9cH3mKjL8xNpOODGv5YW1aRtZkMnPQXsUeVzBwCfDhIlJ';
+const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
+
+function _buildSyncPayload(){
+  const arbresLeger = db.arbres.map(a=>({
+    ...a, photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
+  }));
+  return {
+    version:5, savedAt:new Date().toISOString(),
+    nextId:db.nextId, nextPotId:db.nextPotId||1,
+    nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
+    nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
+    pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
+    rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+    cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
+  };
+}
+
+function ouvrirSyncModal(){
+  const binId  = localStorage.getItem('sync_bin_id')||'';
+  const savedAt = localStorage.getItem('sync_saved_at')||'';
+  document.getElementById('modal').innerHTML=`
+  <div class="modal-head">
+    <div class="modal-title">🔄 Synchronisation entre appareils</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body" style="max-width:420px">
+    <p style="font-size:13px;color:var(--stone);margin-bottom:16px;line-height:1.6">
+      Envoyez vos données dans le cloud, puis récupérez-les sur n'importe quel appareil avec un <strong>code à 24 chiffres</strong>.
+    </p>
+
+    <!-- ENVOYER -->
+    <div style="background:var(--moss-light);border:1px solid rgba(45,90,39,.2);border-radius:10px;padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--moss);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">📤 Envoyer depuis cet appareil</div>
+      ${binId ? `<div style="font-size:11px;color:var(--stone);margin-bottom:8px">Dernière sync : ${savedAt||'—'}</div>` : ''}
+      <button onclick="syncEnvoyer()" style="width:100%;padding:10px;background:var(--moss);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
+        ☁️ Envoyer mes données
+      </button>
+      ${binId ? `<div style="margin-top:10px">
+        <div style="font-size:11px;color:var(--stone);margin-bottom:4px">Votre code de sync :</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div id="sync-code-display" style="flex:1;font-family:monospace;font-size:13px;font-weight:700;letter-spacing:.08em;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--ink)">${binId}</div>
+          <button onclick="syncCopierCode()" style="padding:8px 12px;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">📋 Copier</button>
+        </div>
+      </div>` : ''}
+    </div>
+
+    <!-- RECEVOIR -->
+    <div style="background:#f5f3ff;border:1px solid rgba(124,58,237,.2);border-radius:10px;padding:14px">
+      <div style="font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">📥 Recevoir sur cet appareil</div>
+      <div style="font-size:12px;color:var(--stone);margin-bottom:6px">Entrez le code affiché sur l'autre appareil :</div>
+      <div style="display:flex;gap:6px">
+        <input id="sync-code-input" type="text" placeholder="Collez ou tapez le code…"
+          style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:monospace;letter-spacing:.04em"
+          value="${binId}" oninput="this.value=this.value.replace(/[^a-f0-9]/gi,'')">
+        <button onclick="syncRecevoir()" style="padding:9px 14px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
+          ↓ Recevoir
+        </button>
+      </div>
+    </div>
+
+    <div id="sync-status" style="margin-top:10px;font-size:12px;color:var(--stone);text-align:center;min-height:18px"></div>
+  </div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+}
+
+async function syncEnvoyer(){
+  const status = document.getElementById('sync-status');
+  if(status) status.textContent = '⏳ Envoi en cours…';
+  try{
+    const payload = _buildSyncPayload();
+    const binId = localStorage.getItem('sync_bin_id');
+    let resp, data;
+
+    if(binId){
+      // Mettre à jour le bin existant
+      resp = await fetch(JSONBIN_URL+'/'+binId, {
+        method:'PUT',
+        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
+        body: JSON.stringify(payload)
+      });
+    } else {
+      // Créer un nouveau bin
+      resp = await fetch(JSONBIN_URL, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Private':'false','X-Bin-Name':'yugen_bonsai'},
+        body: JSON.stringify(payload)
+      });
+    }
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    data = await resp.json();
+    const id = data.metadata?.id || data.record?.id || binId;
+    if(!id) throw new Error('ID non reçu');
+    const now = new Date().toLocaleString('fr-CH');
+    localStorage.setItem('sync_bin_id', id);
+    localStorage.setItem('sync_saved_at', now);
+    if(status) status.innerHTML = '✅ Envoyé — <strong>'+db.arbres.length+' arbres</strong>';
+    // Rafraîchir la modale pour montrer le code
+    ouvrirSyncModal();
+  } catch(e){
+    if(status) status.textContent = '❌ Erreur : '+e.message;
+    console.error(e);
+  }
+}
+
+async function syncRecevoir(){
+  const input = document.getElementById('sync-code-input');
+  const code  = (input?.value||'').trim();
+  const status = document.getElementById('sync-status');
+  if(!code){ if(status) status.textContent='⚠️ Entrez un code'; return; }
+  if(status) status.textContent='⏳ Récupération…';
+  try{
+    const resp = await fetch(JSONBIN_URL+'/'+code+'/latest', {
+      headers:{'X-Master-Key':JSONBIN_KEY}
+    });
+    if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
+    const data = await resp.json();
+    const collection = data.record || data;
+    if(!collection.arbres||!Array.isArray(collection.arbres)) throw new Error('Format non reconnu');
+    const nbActuel = db.arbres.length;
+    if(nbActuel>0){
+      if(!confirm(nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\nOK = Remplacer par la sync\nAnnuler = Abandonner')) return;
+    }
+    _showLoading('Chargement de la sync…');
+    await _chargerCollection(collection);
+    localStorage.setItem('sync_bin_id', code);
+    localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
+    render(); _hideLoading(); closeModal();
+    afficherIndicateur('✅ Sync reçue — '+collection.arbres.length+' arbres');
+  } catch(e){
+    if(status) status.textContent='❌ '+e.message;
+    _hideLoading();
+    console.error(e);
+  }
+}
+
+
+// ── ATELIER PHOTOS ────────────────────────────────────────────────────────────
+async function renderPhotosAtelier(c){
+  // Compter les photos depuis IDB
+  const div = document.createElement('div');
+  div.style.cssText = 'padding:24px;max-width:680px';
+  c.appendChild(div);
+
+  // Statistiques rapides
+  let nbPhotos = 0, tailleEstimeeKB = 0;
+  for(const a of db.arbres){
+    for(const p of (a.photos||[])){
+      if(!p.dataUrl && p.id){
+        // Lire depuis IDB pour compter
+        nbPhotos++;
+      } else if(p.dataUrl){
+        nbPhotos++;
+        tailleEstimeeKB += Math.round(p.dataUrl.length * 0.75 / 1024);
+      }
+    }
+  }
+
+  div.innerHTML = `
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:4px">📸 Gestion des photos</h2>
+    <p style="font-size:13px;color:var(--stone);margin-bottom:20px">Optimisez le stockage en recompressant toutes les photos existantes.</p>
+
+    <!-- Statistiques -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+      <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:var(--moss)" id="stat-nb-arbres">${db.arbres.length}</div>
+        <div style="font-size:11px;color:var(--stone)">Arbres</div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:var(--moss)" id="stat-nb-photos">…</div>
+        <div style="font-size:11px;color:var(--stone)">Photos</div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:var(--moss)" id="stat-taille">…</div>
+        <div style="font-size:11px;color:var(--stone)">Taille totale</div>
+      </div>
+    </div>
+
+    <!-- Recompression -->
+    <div style="background:var(--moss-light);border:1px solid rgba(45,90,39,.2);border-radius:12px;padding:20px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:600;color:var(--moss);margin-bottom:6px">🗜️ Recompresser toutes les photos</div>
+      <p style="font-size:12px;color:var(--stone);margin-bottom:14px;line-height:1.6">
+        Réduit chaque photo à <strong>max 1200px</strong> et qualité <strong>80%</strong>.<br>
+        Gain habituel : <strong>50 à 80%</strong> de l'espace. Irréversible.
+      </p>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--stone)">Taille max :</label>
+        <select id="recomp-maxpx" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+          <option value="800">800px (très léger)</option>
+          <option value="1200" selected>1200px (recommandé)</option>
+          <option value="1600">1600px (qualité+)</option>
+        </select>
+        <label style="font-size:12px;color:var(--stone)">Qualité :</label>
+        <select id="recomp-qualite" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+          <option value="0.70">70% (compact)</option>
+          <option value="0.80" selected>80% (recommandé)</option>
+          <option value="0.90">90% (haute qualité)</option>
+        </select>
+      </div>
+      <!-- Barre de progression (cachée au départ) -->
+      <div id="recomp-progress-wrap" style="display:none;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--stone);margin-bottom:5px" id="recomp-label">Traitement…</div>
+        <div style="background:rgba(45,90,39,.15);border-radius:20px;height:8px;overflow:hidden">
+          <div id="recomp-bar" style="background:var(--moss);height:100%;width:0;transition:width .3s;border-radius:20px"></div>
+        </div>
+        <div style="font-size:11px;color:var(--stone);margin-top:4px" id="recomp-stats-live"></div>
+      </div>
+      <button id="recomp-btn" onclick="recompresserToutesPhotos()" style="padding:10px 20px;background:var(--moss);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+        🗜️ Lancer la recompression
+      </button>
+    </div>
+    <div id="recomp-result" style="font-size:13px;color:var(--stone);padding:8px 0"></div>
+  `;
+
+  // Calculer stats réelles depuis IDB
+  _calculerStatsPhotos();
+}
+
+async function _calculerStatsPhotos(){
+  let nb = 0, tailleKB = 0;
+  for(const a of db.arbres){
+    for(const p of (a.photos||[])){
+      if(!p.id) continue;
+      nb++;
+      try{
+        const d = await idbLirePhoto(a.id, p.id);
+        if(d) tailleKB += Math.round(d.length * 0.75 / 1024);
+      } catch(e){}
+    }
+  }
+  const elNb = document.getElementById('stat-nb-photos');
+  const elTaille = document.getElementById('stat-taille');
+  if(elNb) elNb.textContent = nb;
+  if(elTaille) elTaille.textContent = tailleKB > 1024 ? (tailleKB/1024).toFixed(1)+' MB' : tailleKB+' KB';
+}
+
+async function recompresserToutesPhotos(){
+  const maxPx = parseInt(document.getElementById('recomp-maxpx')?.value||'1200');
+  const qualite = parseFloat(document.getElementById('recomp-qualite')?.value||'0.80');
+
+  if(!confirm('Recompresser toutes les photos en '+maxPx+'px / qualité '+Math.round(qualite*100)+'% ?
+
+Cette opération est irréversible. Continuez ?')) return;
+
+  const btn = document.getElementById('recomp-btn');
+  const wrap = document.getElementById('recomp-progress-wrap');
+  const bar  = document.getElementById('recomp-bar');
+  const lbl  = document.getElementById('recomp-label');
+  const live = document.getElementById('recomp-stats-live');
+  const result = document.getElementById('recomp-result');
+
+  if(btn) btn.disabled = true;
+  if(wrap) wrap.style.display = 'block';
+  if(result) result.textContent = '';
+
+  // Construire la liste de toutes les photos
+  const liste = [];
+  for(const a of db.arbres){
+    for(const p of (a.photos||[])){
+      if(p.id) liste.push({arbreId: a.id, photoId: p.id, nom: a.nom});
+    }
+  }
+
+  let ok=0, skip=0, erreurs=0, avantKB=0, apresKB=0;
+
+  for(let i=0; i<liste.length; i++){
+    const {arbreId, photoId, nom} = liste[i];
+    const pct = Math.round((i/liste.length)*100);
+    if(bar) bar.style.width = pct+'%';
+    if(lbl) lbl.textContent = `${i+1} / ${liste.length} — ${nom}`;
+
+    try{
+      const original = await idbLirePhoto(arbreId, photoId);
+      if(!original){ skip++; continue; }
+      avantKB += Math.round(original.length * 0.75 / 1024);
+
+      const compresse = await compresserPhoto(original, maxPx, qualite);
+      apresKB += Math.round(compresse.length * 0.75 / 1024);
+
+      // Ne sauvegarder que si vraiment plus petit
+      if(compresse.length < original.length){
+        await idbSauverPhoto(arbreId, photoId, compresse);
+        // Mettre à jour le dataUrl en cache si présent
+        const a = db.arbres.find(x=>x.id===arbreId);
+        if(a){ const p = (a.photos||[]).find(x=>x.id===photoId); if(p&&p.dataUrl) p.dataUrl=compresse; }
+        ok++;
+      } else {
+        skip++;
+      }
+    } catch(e){
+      erreurs++;
+      console.warn('Erreur photo', photoId, e);
+    }
+
+    if(live) live.textContent = `Traité : ${ok} réduit · ${skip} déjà optimisé · Avant : ${avantKB>1024?(avantKB/1024).toFixed(1)+' MB':avantKB+' KB'} → Après : ${apresKB>1024?(apresKB/1024).toFixed(1)+' MB':apresKB+' KB'}`;
+
+    // Laisser respirer le navigateur toutes les 5 photos
+    if(i % 5 === 0) await new Promise(r=>setTimeout(r,0));
+  }
+
+  if(bar) bar.style.width = '100%';
+  if(lbl) lbl.textContent = '✅ Terminé !';
+  if(btn){ btn.disabled=false; btn.textContent='🗜️ Relancer'; }
+
+  const gain = avantKB - apresKB;
+  const pctGain = avantKB > 0 ? Math.round(gain/avantKB*100) : 0;
+  if(result) result.innerHTML = `
+    <div style="background:#f0fdf4;border:1px solid rgba(45,90,39,.25);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="font-weight:600;color:var(--moss);margin-bottom:4px">✅ Recompression terminée</div>
+      <div style="font-size:12px;color:var(--stone);line-height:1.8">
+        ${ok} photo${ok>1?'s':''} optimisée${ok>1?'s':''} · ${skip} déjà optimisée${skip>1?'s':''} · ${erreurs} erreur${erreurs>1?'s':''}<br>
+        Avant : <strong>${avantKB>1024?(avantKB/1024).toFixed(1)+' MB':avantKB+' KB'}</strong> → 
+        Après : <strong>${apresKB>1024?(apresKB/1024).toFixed(1)+' MB':apresKB+' KB'}</strong><br>
+        Gain : <strong style="color:var(--moss)">${gain>1024?(gain/1024).toFixed(1)+' MB':gain+' KB'} (${pctGain}%)</strong>
+      </div>
+    </div>`;
+
+  autoSave();
+  _calculerStatsPhotos();
+}
+
+function syncCopierCode(){
+  const code = localStorage.getItem('sync_bin_id')||'';
+  if(!code) return;
+  navigator.clipboard?.writeText(code).then(()=>{
+    const btn = document.querySelector('#sync-code-display + button');
+    if(btn){ const orig=btn.textContent; btn.textContent='✅ Copié !'; setTimeout(()=>btn.textContent=orig,1500); }
+  });
 }
 </script>
 </body>
