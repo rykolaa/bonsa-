@@ -135,6 +135,10 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .dp-strip-thumb-wrap:hover .dp-strip-del{opacity:1}
 .dp-cover-del{position:absolute;top:8px;right:8px;background:rgba(180,40,20,.75);border:none;border-radius:6px;color:#fff;font-size:11px;padding:4px 8px;cursor:pointer;display:flex;align-items:center;gap:4px;z-index:5;backdrop-filter:blur(4px);opacity:.8;transition:.15s}
 .dp-cover-del:hover{opacity:1}
+.dp-strip-star{position:absolute;top:2px;left:2px;background:rgba(0,0,0,.5);border:none;border-radius:4px;color:#fff;font-size:10px;padding:2px 4px;cursor:pointer;opacity:0;transition:.15s;z-index:5;line-height:1}
+.dp-strip-thumb-wrap:hover .dp-strip-star{opacity:1}
+.dp-strip-thumb-wrap.is-cover img{border-color:#f5c518;box-shadow:0 0 0 1px #f5c518}
+.dp-strip-thumb-wrap.is-cover .dp-strip-star{opacity:1;background:rgba(200,160,0,.85);color:#fff}
 .dp-body{padding:16px 20px;overflow-y:auto;flex:1}
 .dp-section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--stone);margin-bottom:8px;margin-top:16px;padding-bottom:5px;border-bottom:1px solid var(--border)}
 .dp-section-title:first-child{margin-top:0}
@@ -1676,6 +1680,16 @@ function dpSetCoverIdx(i){
 }
 function dpSetCover(src){ const img=document.getElementById('dp-cover-img'); if(img) img.src=src; }
 
+function setCoverPhoto(arbreId, photoId){
+  const a = db.arbres.find(x=>x.id===arbreId);
+  if(!a) return;
+  // Toggle : si c'est déjà la cover, retirer
+  if(a.cover_photo_id === photoId){ a.cover_photo_id = null; }
+  else { a.cover_photo_id = photoId; }
+  autoSave();
+  openDetail(arbreId);
+}
+
 function deletePhoto(arbreId, photoId){
   if(!confirm('Supprimer cette photo ?')) return;
   const a = db.arbres.find(x=>x.id===parseInt(arbreId));
@@ -1829,7 +1843,7 @@ function openDetail(id){
   state.selectedDetailId = id;
   const days = daysUntil(a.prochain_soin);
   const photos = a.photos||[];
-  const coverPhoto = photos.find(p=>p.dataUrl);
+  const coverPhoto = (a.cover_photo_id ? photos.find(p=>p.id===a.cover_photo_id&&p.dataUrl) : null) || photos.find(p=>p.dataUrl);
   const careClass = days!==null ? (days<=7?'urgent':days<=30?'ok':'neutral') : 'neutral';
 
   // Stocker les dataUrls dans un tableau global pour éviter les inline onclick géants
@@ -1886,9 +1900,10 @@ function openDetail(id){
       ${photos.length > 1 ? `
       <div class="dp-photo-strip-vert">
         ${photos.map((p,i)=>p.dataUrl
-          ? `<div class="dp-strip-thumb-wrap">
+          ? `<div class="dp-strip-thumb-wrap${p.id===a.cover_photo_id?' is-cover':''}">
                <img src="${p.dataUrl}" alt="${fmtDate(p.date)}" title="${esc(p.type||'')} ${fmtDate(p.date)}"
                     onclick="dpSetCoverIdx(${i});openDetailLightbox(${a.id},${i});">
+               <button class="dp-strip-star" onclick="event.stopPropagation();setCoverPhoto(${a.id},'${p.id}')" title="Définir comme photo principale">${p.id===a.cover_photo_id?'⭐':'☆'}</button>
                <button class="dp-strip-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${p.id}')" title="Supprimer cette photo">✕</button>
              </div>`
           : `<div class="dp-strip-thumb" style="background:var(--moss-light);display:flex;align-items:center;justify-content:center;font-size:22px">${getEmoji(a.espece)}</div>`
