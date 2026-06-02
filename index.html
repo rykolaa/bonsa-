@@ -6472,9 +6472,7 @@ async function recompresserToutesPhotos(){
   const maxPx = parseInt(document.getElementById('recomp-maxpx')?.value||'1200');
   const qualite = parseFloat(document.getElementById('recomp-qualite')?.value||'0.80');
 
-  if(!confirm('Recompresser toutes les photos en '+maxPx+'px / qualité '+Math.round(qualite*100)+'% ?
-
-Cette opération est irréversible. Continuez ?')) return;
+  if(!confirm('Recompresser toutes les photos en '+maxPx+'px / qualité '+Math.round(qualite*100)+'% ?\n\nCette opération est irréversible. Continuez ?')) return;
 
   const btn = document.getElementById('recomp-btn');
   const wrap = document.getElementById('recomp-progress-wrap');
