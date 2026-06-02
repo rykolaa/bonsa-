@@ -1362,17 +1362,71 @@ function renderGalerie(c){
   c.innerHTML=html;
 }
 
+// Lit la valeur d'orientation EXIF depuis un dataUrl base64 JPEG
+function lireOrientationExifDataUrl(dataUrl){
+  try{
+    const base64=dataUrl.split(',')[1];
+    if(!base64) return 1;
+    const bin=atob(base64.substring(0,2000));
+    const buf=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    if(buf[0]!==0xFF||buf[1]!==0xD8) return 1;
+    let offset=2;
+    while(offset<buf.length-4){
+      if(buf[offset]!==0xFF){offset++;continue;}
+      const marker=buf[offset+1];
+      const len=(buf[offset+2]<<8)|buf[offset+3];
+      if(marker===0xE1){
+        const sig=String.fromCharCode(...buf.slice(offset+4,offset+10));
+        if(sig.startsWith('Exif')){
+          const es=offset+10;
+          const le=buf[es]===0x49;
+          const r16=o=>le?(buf[es+o]|(buf[es+o+1]<<8)):((buf[es+o]<<8)|buf[es+o+1]);
+          const r32=o=>le?(buf[es+o]|(buf[es+o+1]<<8)|(buf[es+o+2]<<16)|(buf[es+o+3]<<24)):(((buf[es+o]<<24)|(buf[es+o+1]<<16)|(buf[es+o+2]<<8)|buf[es+o+3])>>>0);
+          const ifdOff=r32(4);
+          const n=r16(ifdOff);
+          for(let i=0;i<n&&i<32;i++){
+            const e=ifdOff+2+(i*12);
+            if(r16(e)===0x0112) return r16(e+8)||1;
+          }
+        }
+      }
+      if(marker===0xDA) break;
+      offset+=2+len;
+    }
+  }catch(e){}
+  return 1;
+}
+
+// Applique la rotation EXIF sur un <img> avec dataUrl
+function appliquerRotationExif(img){
+  if(!img.src||!img.src.startsWith('data:image')) return;
+  const orient=lireOrientationExifDataUrl(img.src);
+  const rotMap={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
+  const rot=rotMap[orient]||'';
+  if(rot){
+    img.style.transform=rot;
+    if(orient===6||orient===8){
+      // Swap dimensions to compensate for rotation inside fixed container
+      img.style.width='100%';
+      img.style.height='100%';
+      img.style.objectFit='cover';
+    }
+  }
+}
+
 // Détecte l'orientation d'une image après chargement et applique la bonne classe CSS à la carte
 function setOrientationClass(img){
+  appliquerRotationExif(img);
   const card = img.closest('.photo-card');
   if(!card) return;
   const w = img.naturalWidth;
   const h = img.naturalHeight;
   const ratio = w / h;
   card.classList.remove('orient-portrait','orient-landscape','orient-square');
-  if(ratio < 0.85)       card.classList.add('orient-portrait');   // portrait
-  else if(ratio > 1.2)   card.classList.add('orient-landscape');  // paysage
-  else                   card.classList.add('orient-square');     // carré/proche
+  if(ratio < 0.85)       card.classList.add('orient-portrait');
+  else if(ratio > 1.2)   card.classList.add('orient-landscape');
+  else                   card.classList.add('orient-square');
 }
 
 // lightbox
@@ -6112,6 +6166,34 @@ function genererEtiquette(id){
 </html>`);
   win.document.close();
 }
+
+// Observer global : applique la correction EXIF à toutes les images dataUrl ajoutées au DOM
+(function(){
+  function fixImg(img){
+    if(img.complete && img.src && img.src.startsWith('data:image')){
+      appliquerRotationExif(img);
+    } else if(img.src && img.src.startsWith('data:image')){
+      img.addEventListener('load', function(){ appliquerRotationExif(this); }, {once:true});
+    }
+  }
+  // Appliquer aux images déjà présentes
+  document.querySelectorAll('img').forEach(fixImg);
+  // Observer les nouvelles images ajoutées dynamiquement
+  const obs = new MutationObserver(mutations => {
+    mutations.forEach(m => {
+      m.addedNodes.forEach(node => {
+        if(node.nodeType!==1) return;
+        if(node.tagName==='IMG') fixImg(node);
+        else node.querySelectorAll && node.querySelectorAll('img').forEach(fixImg);
+      });
+      // Aussi vérifier les changements d'attribut src
+      if(m.type==='attributes' && m.attributeName==='src' && m.target.tagName==='IMG'){
+        fixImg(m.target);
+      }
+    });
+  });
+  obs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['src']});
+})();
 
 initialiser();
 
