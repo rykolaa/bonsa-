@@ -345,6 +345,7 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
         <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this)">
       </label>
       <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
+      <button class="btn-add" style="background:#b45309;font-size:11px;padding:5px 10px" onclick="repairerPhotos()" title="Corriger l'orientation de toutes les photos (rotation EXIF)">🔃 Orienter photos</button>
     </div>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
     <!-- Bouton menu mobile -->
