@@ -495,8 +495,9 @@ const STYLES = [
 ];
 // Helpers pour compatibilité avec le reste du code
 function styleFr(s){ const f=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s); return f?f.fr:s; }
-function styleLabel(s){ const f=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s); return f?`${f.kanji} ${f.romaji} — ${f.fr}`:s; }
-function styleShort(s){ const f=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s); return f?`${f.kanji} · ${f.fr}`:s; }
+function _normStyle(s){ return (s && typeof s==='object') ? (s.fr||s.romaji||s.kanji||'') : (s||''); }
+function styleLabel(s){ const v=_normStyle(s); const f=STYLES.find(x=>x.fr===v||x.romaji===v||x.kanji===v); return f?`${f.kanji} ${f.romaji} — ${f.fr}`:v; }
+function styleShort(s){ const v=_normStyle(s); const f=STYLES.find(x=>x.fr===v||x.romaji===v||x.kanji===v); return f?`${f.kanji} · ${f.fr}`:v; }
 // Pour les selects : valeur stockée = fr, affichage = kanji romaji — fr
 const STYLES_OPTIONS = STYLES.map(s=>`<option value="${s.fr}">${s.kanji}  ${s.romaji} — ${s.fr}</option>`).join('');
 const STYLES_DATA = {
@@ -1415,6 +1416,21 @@ function appliquerRotationExif(img){
   }
 }
 
+// Correction d'orientation spécifique pour la lightbox
+function fixLightboxOrientation(img){
+  const orient = lireOrientationExifDataUrl(img.src);
+  if(orient===6||orient===8){
+    // Portrait stocké en paysage : pivoter et adapter les dimensions
+    img.style.transform = orient===6 ? 'rotate(90deg)' : 'rotate(-90deg)';
+    img.style.maxWidth = '72vh';
+    img.style.maxHeight = '90vw';
+    img.style.width = 'auto';
+    img.style.height = 'auto';
+  } else if(orient===3){
+    img.style.transform = 'rotate(180deg)';
+  }
+}
+
 // Détecte l'orientation d'une image après chargement et applique la bonne classe CSS à la carte
 function setOrientationClass(img){
   appliquerRotationExif(img);
@@ -1449,7 +1465,7 @@ function showLightbox(){
   if(!lb){lb=document.createElement('div');lb.id='lightbox-overlay';lb.className='lightbox';document.body.appendChild(lb);}
   lb.style.display='flex';
   lb.innerHTML=`<button class="lb-close" onclick="closeLightbox()">×</button>
-    <div class="lightbox-inner">${p.dataUrl?`<img src="${p.dataUrl}" alt="${p.arbre}">`:`<div class="lightbox-placeholder">${p.emoji}</div>`}</div>
+    <div class="lightbox-inner">${p.dataUrl?`<img src="${p.dataUrl}" alt="${p.arbre}" onload="fixLightboxOrientation(this)">`:`<div class="lightbox-placeholder">${p.emoji}</div>`}</div>
     <div class="lightbox-caption">
       <strong style="font-size:15px">${p.emoji||''} ${p.arbre}</strong>
       ${p.date?`<span style="opacity:.6"> · 📅 ${fmtDate(p.date)}</span>`:''}
@@ -5683,6 +5699,8 @@ async function _chargerCollection(collection){
   }
 
   db.arbres = collection.arbres||[];
+  // Migration : normaliser les styles stockés comme objets
+  db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
   db.nextId = collection.nextId || (Math.max(0,...(collection.arbres||[]).map(a=>a.id||0))+1);
   if(collection.pots) db.pots=collection.pots;
   if(collection.substrats) db.substrats=collection.substrats;
@@ -5775,6 +5793,8 @@ async function initialiser(){
       const collection = data.db || data;
       if(collection.arbres && collection.arbres.length > 0){
         db.arbres = collection.arbres;
+        // Migration : normaliser les styles stockés comme objets {kanji,romaji,fr}
+        db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
         db.nextId = collection.nextId || (Math.max(0,...collection.arbres.map(a=>a.id||0)) + 1);
         if(collection.pots) db.pots = collection.pots;
         if(collection.substrats) db.substrats = collection.substrats;
