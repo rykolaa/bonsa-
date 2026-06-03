@@ -261,6 +261,7 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .lb-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
 .lb-btn:hover{background:rgba(255,255,255,.22)}
 .lb-close{position:absolute;top:18px;right:22px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lb-rotate{position:absolute;top:18px;left:22px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:20px;padding:6px 12px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px}
 /* TRAVAUX TABLE */
 .trav-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .trav-search{flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--ff-body);font-size:13px;background:#fff;color:var(--ink);outline:none}
@@ -1369,7 +1370,7 @@ function lireOrientationExifDataUrl(dataUrl){
   try{
     const base64=dataUrl.split(',')[1];
     if(!base64) return 1;
-    const bin=atob(base64.substring(0,2000));
+    const bin=atob(base64.substring(0,65536));
     const buf=new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
     if(buf[0]!==0xFF||buf[1]!==0xD8) return 1;
@@ -1466,6 +1467,7 @@ function showLightbox(){
   if(!lb){lb=document.createElement('div');lb.id='lightbox-overlay';lb.className='lightbox';document.body.appendChild(lb);}
   lb.style.display='flex';
   lb.innerHTML=`<button class="lb-close" onclick="closeLightbox()">×</button>
+    ${p.dataUrl?`<button class="lb-rotate" onclick="rotateLbPhoto()" title="Pivoter la photo de 90°">↻ Pivoter</button>`:''}
     <div class="lightbox-inner">${p.dataUrl?`<img src="${p.dataUrl}" alt="${p.arbre}" onload="fixLightboxOrientation(this)">`:`<div class="lightbox-placeholder">${p.emoji}</div>`}</div>
     <div class="lightbox-caption">
       <strong style="font-size:15px">${p.emoji||''} ${p.arbre}</strong>
@@ -1482,6 +1484,47 @@ function showLightbox(){
 }
 function moveLb(dir){lbIdx=Math.max(0,Math.min(lbPhotos.length-1,lbIdx+dir));showLightbox();}
 function closeLightbox(){const lb=document.getElementById('lightbox-overlay');if(lb)lb.style.display='none';}
+
+// Pivote la photo courante de 90° dans la lightbox et sauvegarde dans IDB
+async function rotateLbPhoto(){
+  const p = lbPhotos[lbIdx];
+  if(!p||!p.dataUrl) return;
+  // Rotation 90° via canvas
+  const rotated = await new Promise(res=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const cv = document.createElement('canvas');
+      cv.width = img.naturalHeight;
+      cv.height = img.naturalWidth;
+      const ctx = cv.getContext('2d');
+      ctx.translate(cv.width/2, cv.height/2);
+      ctx.rotate(Math.PI/2);
+      ctx.drawImage(img, -img.naturalWidth/2, -img.naturalHeight/2);
+      res(cv.toDataURL('image/jpeg', 0.85));
+    };
+    img.src = p.dataUrl;
+  });
+  // Mettre à jour en mémoire et IDB
+  p.dataUrl = rotated;
+  // Trouver l'arbre et la photo pour mettre à jour
+  for(const a of db.arbres){
+    const ph = (a.photos||[]).find(x=>x.id===p.id);
+    if(ph){ ph.dataUrl = rotated; break; }
+  }
+  // Sauvegarder dans IDB — chercher l'arbreId pour construire la clé
+  try{
+    let arbreId = null;
+    for(const a of db.arbres){
+      if((a.photos||[]).find(x=>x.id===p.id)){ arbreId = a.id; break; }
+    }
+    if(arbreId !== null){
+      await idbSauverPhoto(arbreId, p.id, rotated);
+    }
+  }catch(e){ console.warn('IDB rotate error',e); }
+  autoSave();
+  showLightbox(); // Recharger la lightbox avec la photo pivotée
+  afficherIndicateur('✅ Photo pivotée et sauvegardée');
+}
 
 // ── DIAPORAMA ─────────────────────────────────────────────────────────────────
 let _diapoTimer=null, _diapoIdx=0, _diapoPhotos=[], _diapoPlaying=false, _diapoVitesse=4000;
@@ -5031,7 +5074,7 @@ function lireOrientationExif(dataUrl){
   // Parse les premiers octets du JPEG pour trouver le tag EXIF orientation (0x0112)
   try{
     const b64 = dataUrl.split(',')[1];
-    const bin = atob(b64.substring(0, Math.min(b64.length, 2048))); // lire seulement le début
+    const bin = atob(b64.substring(0, Math.min(b64.length, 65536))); // lire seulement le début
     const bytes = new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
     if(bytes[0]!==0xFF||bytes[1]!==0xD8) return 1; // pas un JPEG
