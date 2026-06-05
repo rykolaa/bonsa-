@@ -992,16 +992,13 @@ function validerSoin(arbreId, soinType, soinDate, event){
     <div class="form-row">
       <div class="fg"><label>Coût (CHF)</label><input id="v-cout" type="number" min="0" step="0.5" value="${coutDefaut}"></div>
     </div>
-    <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px;font-size:12px;font-weight:500;color:var(--stone)">
-      REPROGRAMMER CE SOIN
+    <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer">
+        <input type="checkbox" id="v-reprogrammer" style="width:14px;height:14px" ${prochainDefaut?'checked':''} onchange="document.getElementById('v-replanif-wrap').style.display=this.checked?'block':'none'">
+        Reprogrammer ce soin
+      </label>
     </div>
-    ${freqDefaut===null ? `
-    <div style="font-size:12px;color:var(--stone);margin-bottom:8px">Ce type de soin n'a pas de fréquence — il sera retiré de la liste après validation.</div>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:8px">
-      <input type="checkbox" id="v-reprogrammer" style="width:14px;height:14px">
-      Reprogrammer quand même à une date précise
-    </label>
-    <div id="v-replanif-wrap" style="display:none">` : ''}
+    <div id="v-replanif-wrap" style="${prochainDefaut?'':'display:none'}">
     <div class="form-row">
       <div class="fg"><label>Prochain soin</label><input id="v-pdate" type="date" value="${prochainDefaut}"></div>
       <div class="fg"><label>Type</label><select id="v-ptype">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
@@ -1014,11 +1011,7 @@ function validerSoin(arbreId, soinType, soinDate, event){
         ">${t.emoji} +${t.freq}j</button>`
       ).join('')}
     </div>
-    ${freqDefaut===null ? `</div>` : ''}
-    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;cursor:pointer">
-      <input type="checkbox" id="v-supprimer" style="width:14px;height:14px">
-      Ne pas reprogrammer (supprimer ce soin de la liste)
-    </label>
+    </div>
   </div>
   <div class="modal-footer">
     <button class="btn" onclick="closeModal()">Annuler</button>
@@ -1047,8 +1040,8 @@ function confirmerValidationSoin(arbreId){
   const origType  = document.getElementById('v-soin-type-orig').value;
   const origDate  = document.getElementById('v-soin-date-orig').value;
 
-  const supprimer = document.getElementById('v-supprimer')?.checked ||
-    (getSoinFreq(type)===null && !document.getElementById('v-reprogrammer')?.checked);
+  const reprogrammer = document.getElementById('v-reprogrammer')?.checked;
+  const supprimer = !reprogrammer;
   // Enregistrer dans l'historique
   if(!a.travaux) a.travaux=[];
   a.travaux.unshift({date, type, desc, cout, photosLinked:[]});
