@@ -1066,6 +1066,7 @@ function confirmerValidationSoin(arbreId){
   a.prochain_soin = next?.date||'';
   a.type_soin     = next?.type||'';
 
+  declencherRappelSoin(a, type, date);
   closeModal(); render(); autoSave();
   afficherIndicateur(`✅ ${type} validé — ${a.nom}${!supprimer?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
 }
@@ -1156,6 +1157,7 @@ function confirmerSoinGroupe(){
     count++;
   });
 
+  ids.forEach(id=>{ const a=db.arbres.find(x=>x.id===id); if(a) declencherRappelSoin(a, type, date); });
   etiqSel.clear();
   closeModal(); render(); autoSave();
   afficherIndicateur(`✅ ${type} enregistré pour ${count} arbre${count>1?'s':''}`);
@@ -4367,6 +4369,7 @@ function renderTravaux(c){
           ${t.cout?`<span style="background:#f0f7ff;color:#185fa5;border-radius:4px;padding:2px 6px">💰 ${fmtCHF(t.cout)}</span>`:''}
         </div>
         ${t.remarque?`<div style="font-size:11px;color:var(--stone);margin-top:6px;font-style:italic;line-height:1.4">${esc(t.remarque)}</div>`:''}
+        ${t.rappel_type?`<div style="font-size:11px;color:var(--moss);margin-top:5px">↪ Rappel : ${t.rappel_type} dans ${t.rappel_delai||60}j</div>`:''}
       </div>`;
     });
     html+=`</div></div>`;
@@ -4436,6 +4439,16 @@ function openTravailTypeModal(nom, groupePresel){
     +'</div>'
     +'<div class="form-section">Remarques</div>'
     +'<div class="form-row one"><div class="fg"><textarea id="tt-remarque" rows="2" placeholder="Notes sur ce type de soin, instructions, produits utilisés…" style="resize:vertical">'+(t&&t.remarque?esc(t.remarque):'')+'</textarea></div></div>'
+    +'<div class="form-section">Rappel automatique</div>'
+    +'<div style="font-size:12px;color:var(--stone);margin-bottom:8px">Quand ce soin est effectué, planifier automatiquement un autre type de soin.</div>'
+    +'<div class="form-row">'
+    +'<div class="fg"><label>Déclenche un rappel</label>'
+    +'<select id="tt-rappel-type"><option value="">— Aucun —</option>'
+    +getTravaux().map(x=>'<option value="'+esc(x.nom)+'" '+(t&&t.rappel_type===x.nom?'selected':'')+'>'+x.emoji+' '+x.nom+'</option>').join('')
+    +'</select></div>'
+    +'<div class="fg"><label>Délai (jours)</label>'
+    +'<input id="tt-rappel-delai" type="number" min="1" step="1" value="'+(t&&t.rappel_delai?t.rappel_delai:60)+'" placeholder="Ex: 60"></div>'
+    +'</div>'
     +'<div class="form-section">Coût par taille d\'arbre</div>'
     +'<div style="margin-bottom:8px">'
     +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:10px">'
@@ -4488,7 +4501,9 @@ function sauvegarderTravailType(nomOriginal){
     db.travaux_types = TRAVAUX_TYPES_DEFAUT.map(t=>({...t}));
   }
   const remarque = document.getElementById('tt-remarque')?.value?.trim()||'';
-  const entry = {nom, emoji, groupe, freq, cout, couts_taille, mois_debut, mois_fin, remarque};
+  const rappel_type = document.getElementById('tt-rappel-type')?.value||'';
+  const rappel_delai = parseInt(document.getElementById('tt-rappel-delai')?.value)||60;
+  const entry = {nom, emoji, groupe, freq, cout, couts_taille, mois_debut, mois_fin, remarque, rappel_type, rappel_delai};
   if(nomOriginal){
     const idx = db.travaux_types.findIndex(t=>t.nom===nomOriginal);
     if(idx>=0) db.travaux_types[idx] = entry;
@@ -4498,6 +4513,24 @@ function sauvegarderTravailType(nomOriginal){
     db.travaux_types.push(entry);
   }
   closeModal(); renderAtelier(document.getElementById('content')); autoSave();
+}
+
+// Déclenche le rappel automatique lié à un type de soin pour un arbre donné
+function declencherRappelSoin(arbre, typeSoinEffectue, dateEffectue){
+  const def = getTravaux().find(t=>t.nom===typeSoinEffectue);
+  if(!def || !def.rappel_type) return;
+  const delai = def.rappel_delai || 60;
+  const dateRappel = new Date(new Date(dateEffectue).getTime() + delai*86400000).toISOString().split('T')[0];
+  if(!arbre.soins_planifies) arbre.soins_planifies = [];
+  // Ne pas dupliquer si déjà planifié à cette date
+  const existe = arbre.soins_planifies.find(s=>s.type===def.rappel_type && s.date===dateRappel);
+  if(!existe){
+    arbre.soins_planifies.push({type:def.rappel_type, date:dateRappel, notes:'Auto — suite à '+typeSoinEffectue+' du '+fmtDate(dateEffectue)});
+    // Mettre à jour prochain_soin si ce rappel est plus proche
+    const next = arbre.soins_planifies.slice().sort((a,b)=>a.date.localeCompare(b.date))[0];
+    arbre.prochain_soin = next?.date||'';
+    arbre.type_soin     = next?.type||'';
+  }
 }
 
 function supprimerTravailType(nom){
