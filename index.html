@@ -760,7 +760,7 @@ function majLatinField(){
 }
 
 let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], cultivars:[], travaux_types:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
-let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'num', acc:{affichage:false, style:true, origine:true, espece:true, taille:false, alertes:false}};
+let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, style:true, origine:true, espece:true, taille:false, alertes:false}};
 const etiqSel = new Set();
 
 function fmtDate(d){
