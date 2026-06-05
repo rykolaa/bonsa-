@@ -4366,6 +4366,7 @@ function renderTravaux(c){
           <span style="background:#fff8e6;color:#a07000;border-radius:4px;padding:2px 6px">📅 ${plage}</span>
           ${t.cout?`<span style="background:#f0f7ff;color:#185fa5;border-radius:4px;padding:2px 6px">💰 ${fmtCHF(t.cout)}</span>`:''}
         </div>
+        ${t.remarque?`<div style="font-size:11px;color:var(--stone);margin-top:6px;font-style:italic;line-height:1.4">${esc(t.remarque)}</div>`:''}
       </div>`;
     });
     html+=`</div></div>`;
@@ -4433,6 +4434,8 @@ function openTravailTypeModal(nom, groupePresel){
     +'<div class="fg"><label>Mois de début</label><select id="tt-mois-debut"><option value="">— Toute l\'année —</option>'+moisDebutOpts+'</select></div>'
     +'<div class="fg"><label>Mois de fin</label><select id="tt-mois-fin"><option value="">— Toute l\'année —</option>'+moisFinOpts+'</select></div>'
     +'</div>'
+    +'<div class="form-section">Remarques</div>'
+    +'<div class="form-row one"><div class="fg"><textarea id="tt-remarque" rows="2" placeholder="Notes sur ce type de soin, instructions, produits utilisés…" style="resize:vertical">'+(t&&t.remarque?esc(t.remarque):'')+'</textarea></div></div>'
     +'<div class="form-section">Coût par taille d\'arbre</div>'
     +'<div style="margin-bottom:8px">'
     +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:10px">'
@@ -4484,7 +4487,8 @@ function sauvegarderTravailType(nomOriginal){
   if(!db.travaux_types || !db.travaux_types.length){
     db.travaux_types = TRAVAUX_TYPES_DEFAUT.map(t=>({...t}));
   }
-  const entry = {nom, emoji, groupe, freq, cout, couts_taille, mois_debut, mois_fin};
+  const remarque = document.getElementById('tt-remarque')?.value?.trim()||'';
+  const entry = {nom, emoji, groupe, freq, cout, couts_taille, mois_debut, mois_fin, remarque};
   if(nomOriginal){
     const idx = db.travaux_types.findIndex(t=>t.nom===nomOriginal);
     if(idx>=0) db.travaux_types[idx] = entry;
