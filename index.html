@@ -1064,6 +1064,46 @@ function confirmerValidationSoin(arbreId){
   afficherIndicateur(`✅ ${type} validé — ${a.nom}${!supprimer?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
 }
 
+function validerTousSoinsUrgents(event){
+  if(event) event.stopPropagation();
+  const today = new Date().toISOString().split('T')[0];
+  // Reconstruire la liste des soins urgents
+  const moisActuel = new Date().getMonth()+1;
+  let count = 0;
+  db.arbres.forEach(a=>{
+    const soins = getSoinsPlanifies(a);
+    soins.forEach(soin=>{
+      const j = daysUntil(soin.date);
+      if(j === null || j > 14) return;
+      const def = getTravaux().find(t=>t.nom===soin.type);
+      if(def && def.mois_debut && def.mois_fin){
+        if(moisActuel < def.mois_debut || moisActuel > def.mois_fin) return;
+      }
+      // Enregistrer dans l'historique
+      if(!a.travaux) a.travaux=[];
+      a.travaux.unshift({date:today, type:soin.type, desc:'', cout:getSoinCoutPourArbre(soin.type,a), photosLinked:[]});
+      // Retirer le soin planifié
+      if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
+      a.soins_planifies = a.soins_planifies.filter(s=>!(s.type===soin.type && s.date===soin.date));
+      // Reprogrammer selon fréquence
+      const freq = getSoinFreq(soin.type);
+      if(freq){
+        const pdate = new Date(Date.now()+freq*86400000).toISOString().split('T')[0];
+        a.soins_planifies.push({type:soin.type, date:pdate, notes:''});
+      }
+      // Déclencher rappel automatique
+      declencherRappelSoin(a, soin.type, today);
+      count++;
+    });
+    // Recalculer prochain_soin
+    const next = (a.soins_planifies||[]).slice().sort((a,b)=>a.date.localeCompare(b.date))[0];
+    a.prochain_soin = next?.date||'';
+    a.type_soin     = next?.type||'';
+  });
+  render(); autoSave();
+  afficherIndicateur(`✅ ${count} soin${count>1?'s':''} validé${count>1?'s':''} pour aujourd'hui`);
+}
+
 function ouvrirSoinGroupe(){
   const ids = [...etiqSel];
   if(!ids.length) return;
@@ -1203,9 +1243,10 @@ function renderCollection(c){
       <div style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <strong>Soins à prévoir — ${urgent.length} soin${urgent.length>1?'s':''} sur ${Object.keys(parArbre).length} arbre${Object.keys(parArbre).length>1?'s':''}</strong>
-          <span style="font-size:11px;color:var(--stone);margin-left:12px">
-            ${urgents7.length?`<span style="color:var(--rust)">⚠️ ${urgents7.length} urgent${urgents7.length>1?'s':''}</span> · `:''}
-            ${urgents14.length?`${urgents14.length} dans 14j · `:''}
+          <span style="font-size:11px;color:var(--stone);margin-left:12px;display:flex;align-items:center;gap:10px">
+            ${urgents7.length?`<span style="color:var(--rust)">⚠️ ${urgents7.length} urgent${urgents7.length>1?'s':''}</span>`:''}
+            ${urgents14.length?`<span>${urgents14.length} dans 14j</span>`:''}
+            <button onclick="validerTousSoinsUrgents(event)" style="font-size:11px;padding:3px 10px;background:var(--moss);color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">✅ Tout valider</button>
             <span id="soins-toggle-label">▼ voir</span>
           </span>
         </div>
