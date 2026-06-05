@@ -1122,7 +1122,7 @@ function ouvrirSoinGroupe(){
     selPtype.addEventListener('change', function(){ majPdate(); });
     majPdate();
   }, 0);
-  openModal();
+  document.getElementById('modal-overlay').style.display='flex';
 }
 
 function confirmerSoinGroupe(){
