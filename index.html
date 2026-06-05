@@ -1070,6 +1070,97 @@ function confirmerValidationSoin(arbreId){
   afficherIndicateur(`✅ ${type} validé — ${a.nom}${!supprimer?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
 }
 
+function ouvrirSoinGroupe(){
+  const ids = [...etiqSel];
+  if(!ids.length) return;
+  const noms = ids.map(id=>db.arbres.find(a=>a.id===id)?.nom||'?');
+  const today = new Date().toISOString().split('T')[0];
+  const types = getTravaux();
+  const m = document.getElementById('modal');
+  m.innerHTML=`
+  <div class="modal-head">
+    <div class="modal-title">✅ Soin groupé — ${ids.length} arbre${ids.length>1?'s':''}</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div style="background:var(--moss-light);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--stone);line-height:1.6">
+      ${noms.slice(0,8).join(' · ')}${noms.length>8?' · <em>et '+(noms.length-8)+' autres</em>':''}
+    </div>
+    <div class="form-row">
+      <div class="fg"><label>Type de soin effectué</label>
+        <select id="sg-type">${types.map(t=>`<option value="${esc(t.nom)}">${t.emoji||'📅'} ${t.nom}</option>`).join('')}</select>
+      </div>
+      <div class="fg"><label>Date d'exécution</label><input id="sg-date" type="date" value="${today}"></div>
+    </div>
+    <div class="form-row one"><div class="fg"><label>Notes (facultatif)</label><input id="sg-notes" placeholder="Ex: Biogold 1 pastille, conditions météo…"></div></div>
+    <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px;font-size:12px;font-weight:500;color:var(--stone)">REPROGRAMMER LE PROCHAIN SOIN</div>
+    <div class="form-row">
+      <div class="fg"><label>Prochain soin — type</label>
+        <select id="sg-ptype">${types.map(t=>`<option value="${esc(t.nom)}">${t.emoji||'📅'} ${t.nom}</option>`).join('')}</select>
+      </div>
+      <div class="fg"><label>Prochain soin — date</label><input id="sg-pdate" type="date" value=""></div>
+    </div>
+    <div style="font-size:11px;color:var(--stone);margin-bottom:4px">Laisser la date vide pour calculer automatiquement selon la fréquence du type choisi.</div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="confirmerSoinGroupe()">✅ Enregistrer pour ${ids.length} arbre${ids.length>1?'s':''}</button>
+  </div>`;
+  // Auto-remplir la date du prochain soin quand le type change
+  setTimeout(()=>{
+    const selType = document.getElementById('sg-type');
+    const selPtype = document.getElementById('sg-ptype');
+    const inputPdate = document.getElementById('sg-pdate');
+    function majPdate(){
+      const freq = getSoinFreq(selType.value);
+      if(freq){
+        const d = new Date(Date.now() + freq*86400000);
+        inputPdate.value = d.toISOString().split('T')[0];
+      }
+    }
+    selType.addEventListener('change', function(){ selPtype.value=this.value; majPdate(); });
+    selPtype.addEventListener('change', function(){ majPdate(); });
+    majPdate();
+  }, 0);
+  openModal();
+}
+
+function confirmerSoinGroupe(){
+  const ids = [...etiqSel];
+  const date  = document.getElementById('sg-date').value;
+  const type  = document.getElementById('sg-type').value;
+  const notes = document.getElementById('sg-notes').value;
+  const ptype = document.getElementById('sg-ptype').value;
+  const pdate = document.getElementById('sg-pdate').value;
+  const freq  = getSoinFreq(type);
+
+  let count = 0;
+  ids.forEach(id=>{
+    const a = db.arbres.find(x=>x.id===id);
+    if(!a) return;
+    // Enregistrer dans l'historique
+    if(!a.travaux) a.travaux=[];
+    a.travaux.unshift({date, type, desc:notes, cout:0, photosLinked:[]});
+    // Calculer prochain soin
+    const prochainDate = pdate || (freq ? new Date(Date.now()+freq*86400000).toISOString().split('T')[0] : '');
+    // Retirer l'ancien soin planifié de ce type s'il existe
+    if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
+    a.soins_planifies = a.soins_planifies.filter(s=>s.type!==type);
+    if(prochainDate){
+      a.soins_planifies.push({type:ptype, date:prochainDate, notes:''});
+    }
+    // Mettre à jour prochain_soin global
+    const next = a.soins_planifies.slice().sort((a,b)=>a.date.localeCompare(b.date))[0];
+    a.prochain_soin = next?.date||'';
+    a.type_soin     = next?.type||'';
+    count++;
+  });
+
+  etiqSel.clear();
+  closeModal(); render(); autoSave();
+  afficherIndicateur(`✅ ${type} enregistré pour ${count} arbre${count>1?'s':''}`);
+}
+
 function renderCollection(c){
   const filtered = getFiltered();
   const all = db.arbres;
@@ -1152,6 +1243,7 @@ function renderCollection(c){
         style="font-size:12px;padding:4px 10px;background:${_allSel?'var(--moss)':'#fff'};color:${_allSel?'#fff':'var(--stone)'};border:1px solid ${_allSel?'var(--moss)':'var(--border)'};border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">
         <span style="font-size:14px">${_allSel?'☑':'☐'}</span> ${_allSel?'Tout désélect.':'Tout sélect.'}
       </button>
+      ${etiqSel.size>0?`<button onclick="ouvrirSoinGroupe()" style="font-size:12px;padding:4px 12px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">✅ Soin groupé <strong>(${etiqSel.size})</strong></button>`:''}
       <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
         <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
         <option value="nom"    ${state.sort==='nom'   ?'selected':''}>🔤 Nom A→Z</option>
