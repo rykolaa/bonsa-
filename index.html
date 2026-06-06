@@ -319,6 +319,7 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .compo-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 .price-pill{font-size:11px;background:var(--gold-light);color:var(--gold);padding:2px 8px;border-radius:10px;font-weight:500}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -6547,7 +6548,7 @@ function _buildSyncPayload(){
   const arbresLeger = db.arbres.map(a=>({
     ...a, photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
   }));
-  return {
+  const raw = {
     version:5, savedAt:new Date().toISOString(),
     nextId:db.nextId, nextPotId:db.nextPotId||1,
     nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
@@ -6557,6 +6558,11 @@ function _buildSyncPayload(){
     especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
   };
+  // Compresser avec LZString si disponible
+  if(typeof LZString !== 'undefined'){
+    return {compressed:true, data:LZString.compressToBase64(JSON.stringify(raw))};
+  }
+  return raw;
 }
 
 function ouvrirSyncModal(){
@@ -6662,7 +6668,11 @@ async function syncRecevoir(){
     });
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
-    const collection = data.record || data;
+    let collection = data.record || data;
+    // Décompresser si nécessaire
+    if(collection.compressed && collection.data && typeof LZString !== 'undefined'){
+      collection = JSON.parse(LZString.decompressFromBase64(collection.data));
+    }
     if(!collection.arbres||!Array.isArray(collection.arbres)) throw new Error('Format non reconnu');
     const nbActuel = db.arbres.length;
     if(nbActuel>0){
