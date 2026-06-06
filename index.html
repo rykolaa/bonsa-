@@ -6541,10 +6541,11 @@ async function dropboxCharger(){
 }
 
 // ── SYNCHRONISATION SIMPLE (JSONBin.io) ───────────────────────────────────────
-const JSONBIN_KEY = '$2a$10$GqEaqPCA0aHw7KdblXaJmOzRusQQSYLsFsBoLyF5xcFrh9WKR5FNe';
-const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
+// Sync via GitHub Gist (pas de limite de taille gênante, gratuit)
+const GIST_TOKEN = ''; // Optionnel : token GitHub pour sync privée
+const GIST_API   = 'https://api.github.com/gists';
 
-function _buildSyncPayload(){
+function _buildSyncPayloadRaw(){
   const arbresLeger = db.arbres.map(a=>({
     ...a, photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
   }));
@@ -6575,7 +6576,7 @@ function ouvrirSyncModal(){
   </div>
   <div class="modal-body" style="max-width:420px">
     <p style="font-size:13px;color:var(--stone);margin-bottom:16px;line-height:1.6">
-      Envoyez vos données dans le cloud, puis récupérez-les sur n'importe quel appareil avec un <strong>code à 24 chiffres</strong>.
+      Envoyez vos données dans le cloud via GitHub Gist, puis récupérez-les sur n'importe quel appareil avec le <strong>code de sync</strong>.
     </p>
 
     <!-- ENVOYER -->
@@ -6617,38 +6618,40 @@ async function syncEnvoyer(){
   const status = document.getElementById('sync-status');
   if(status) status.textContent = '⏳ Envoi en cours…';
   try{
-    const payload = _buildSyncPayload();
-    const binId = localStorage.getItem('sync_bin_id');
-    let resp, data;
+    const raw = _buildSyncPayloadRaw();
+    const jsonStr = JSON.stringify(raw);
+    // Compresser avec LZString
+    const compressed = typeof LZString!=='undefined'
+      ? LZString.compressToBase64(jsonStr)
+      : jsonStr;
 
-    if(binId){
-      // Mettre à jour le bin existant
-      resp = await fetch(JSONBIN_URL+'/'+binId, {
-        method:'PUT',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
-        body: JSON.stringify(payload)
-      });
+    const gistId = localStorage.getItem('sync_bin_id');
+    const headers = {'Content-Type':'application/json','Accept':'application/vnd.github+json'};
+    if(GIST_TOKEN) headers['Authorization']='Bearer '+GIST_TOKEN;
+
+    const body = JSON.stringify({
+      description:'Yūgen Bonsaï sync',
+      public: false,
+      files:{'yugen_bonsai.json':{content: JSON.stringify({c:true,d:compressed})}}
+    });
+
+    let resp, data;
+    if(gistId){
+      resp = await fetch('https://api.github.com/gists/'+gistId,{method:'PATCH',headers,body});
     } else {
-      // Créer un nouveau bin
-      resp = await fetch(JSONBIN_URL, {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Private':'false','X-Bin-Name':'yugen_bonsai'},
-        body: JSON.stringify(payload)
-      });
+      resp = await fetch('https://api.github.com/gists',{method:'POST',headers,body});
     }
     if(!resp.ok){
-      let msg = 'HTTP '+resp.status;
-      try{ const e=await resp.json(); msg+=' — '+(e.message||JSON.stringify(e)); }catch(_){}
+      let msg='HTTP '+resp.status;
+      try{const e=await resp.json();msg+=' — '+(e.message||'');}catch(_){}
       throw new Error(msg);
     }
     data = await resp.json();
-    const id = data.metadata?.id || data.record?.id || binId;
+    const id = data.id || gistId;
     if(!id) throw new Error('ID non reçu');
-    const now = new Date().toLocaleString('fr-CH');
     localStorage.setItem('sync_bin_id', id);
-    localStorage.setItem('sync_saved_at', now);
+    localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
     if(status) status.innerHTML = '✅ Envoyé — <strong>'+db.arbres.length+' arbres</strong>';
-    // Rafraîchir la modale pour montrer le code
     ouvrirSyncModal();
   } catch(e){
     if(status) status.textContent = '❌ Erreur : '+e.message;
@@ -6663,15 +6666,17 @@ async function syncRecevoir(){
   if(!code){ if(status) status.textContent='⚠️ Entrez un code'; return; }
   if(status) status.textContent='⏳ Récupération…';
   try{
-    const resp = await fetch(JSONBIN_URL+'/'+code+'/latest', {
-      headers:{'X-Master-Key':JSONBIN_KEY}
-    });
+    const headers = {'Accept':'application/vnd.github+json'};
+    if(GIST_TOKEN) headers['Authorization']='Bearer '+GIST_TOKEN;
+    const resp = await fetch('https://api.github.com/gists/'+code, {headers});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
-    let collection = data.record || data;
+    const fileContent = data.files?.['yugen_bonsai.json']?.content;
+    if(!fileContent) throw new Error('Fichier sync introuvable dans le Gist');
+    let collection = JSON.parse(fileContent);
     // Décompresser si nécessaire
-    if(collection.compressed && collection.data && typeof LZString !== 'undefined'){
-      collection = JSON.parse(LZString.decompressFromBase64(collection.data));
+    if(collection.c && collection.d && typeof LZString!=='undefined'){
+      collection = JSON.parse(LZString.decompressFromBase64(collection.d));
     }
     if(!collection.arbres||!Array.isArray(collection.arbres)) throw new Error('Format non reconnu');
     const nbActuel = db.arbres.length;
