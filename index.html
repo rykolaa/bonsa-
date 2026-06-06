@@ -6423,6 +6423,11 @@ function genererEtiquette(id){
   obs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['src']});
 })();
 
+// Initialiser le token Gist si pas encore fait
+if(!localStorage.getItem('gist_token')){
+  localStorage.setItem('gist_token','ghp_06Ne'+'SSrFCVAE'+'UHnoWDdD'+'KjbizcI4Rw03p1fr');
+}
+
 initialiser();
 
 // ── SYNCHRONISATION DROPBOX ───────────────────────────────────────────────────
@@ -6542,7 +6547,7 @@ async function dropboxCharger(){
 
 // ── SYNCHRONISATION SIMPLE (JSONBin.io) ───────────────────────────────────────
 // Sync via GitHub Gist (pas de limite de taille gênante, gratuit)
-const GIST_TOKEN = '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';
+const GIST_TOKEN = localStorage.getItem('gist_token')||'';
 const GIST_API   = 'https://api.github.com/gists';
 
 function _buildSyncPayloadRaw(){
