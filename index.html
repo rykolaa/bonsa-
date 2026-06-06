@@ -6630,7 +6630,11 @@ async function syncEnvoyer(){
         body: JSON.stringify(payload)
       });
     }
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    if(!resp.ok){
+      let msg = 'HTTP '+resp.status;
+      try{ const e=await resp.json(); msg+=' — '+(e.message||JSON.stringify(e)); }catch(_){}
+      throw new Error(msg);
+    }
     data = await resp.json();
     const id = data.metadata?.id || data.record?.id || binId;
     if(!id) throw new Error('ID non reçu');
