@@ -6567,10 +6567,6 @@ function _buildSyncPayloadRaw(){
     especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
   };
-  // Compresser avec LZString si disponible
-  if(typeof LZString !== 'undefined'){
-    return {compressed:true, data:LZString.compressToBase64(JSON.stringify(raw))};
-  }
   return raw;
 }
 
