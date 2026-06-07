@@ -319,7 +319,10 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .compo-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 .price-pill{font-size:11px;background:var(--gold-light);color:var(--gold);padding:2px 8px;border-radius:10px;font-weight:500}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<script>
+// LZString v1.5.0 - intégré inline
+var LZString=function(){var o=String.fromCharCode,i={};function n(o,n){if(!i[o]){i[o]={};for(var t=0;t<o.length;t++)i[o][o[t]]=t}return i[o][n]}var t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",r="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$",e={};function s(o,t){var r,i,e,s,u,f,h,a=[],c=o.length,g=0,l=o,p=0,d=2;function v(o){a[g>>3]|=o<<(8-(g&7)^7),g+=t}function w(o){v(o>>>16&65535),v(o>>>8&65535),v(o&65535)}for(e=0;e<c;e+=1){var y=l[e];if(!Object.prototype.hasOwnProperty.call(n,y))if(n[y]=d++,w(y.charCodeAt(0)),d==262144){d=4,n={}}else if(Object.prototype.hasOwnProperty.call(n,y)){var b=n[y];if(b<256)v(0),w(b);else v(1),w(b);if(16384==--d){d=4,n={}}}else w(n[y]),Object.prototype.hasOwnProperty.call(n,y)||(n[y]=d++)}return v(0),w(1),++g,0==g%t&&a.push(0),a.join("")}e.compressToBase64=function(o){if(null==o)return"";var i=s(o,6);switch(i=i+"====".slice(i.length%4),i.length%4){case 0:return i;case 1:return i+"===";case 2:return i+"==";case 3:return i+"="}};e.decompressFromBase64=function(o){return null==o?"":""==o?null:u(o.length,32,function(t){return n(r,o[t])})};function u(n,r,i){var e,s,u,f,h,a,c,g=[],l=n,p=r,d=i,v=o,w=0,y=0,b="",m=String.fromCharCode,q=[];for(u=0;u<3;u+=1)q[u]=u;var B=0,j=0;function k(){if(j==B){return null}var o=0,n=Math.pow(2,j);for(;j<p&&(o|=(2&d(l))-1+(o?n:1),++j<p);n*=2);if(j>=B)j=0;return o}var F=null,x=[];for(B=3,a=k(),e=a;null!==a;a=k()){if(0===a){for(u=0;u<8;u++)F=F||0,F=F*(1+(F>127?-256:0))+k();x.push(v(F)),g.push(v(F)),F=null,u=0,B++,j=3}else if(1===a){for(F=0,u=0;u<16;u++)F=256*F+k();x.push(v(F)),g.push(v(F)),F=null,u=0,B++,j=3}else{if(null===(c=x[a-2]))return null;g.push.apply(g,c.split("")),q[B++&3]=c,q[B++&3]=""}b=b+(0===g.length?"":g.join("")),g=[]}return b}return e}();
+</script>
 </head>
 <body>
 <div class="app" id="app">
@@ -6679,12 +6682,18 @@ async function syncRecevoir(){
     const data = await resp.json();
     const fileContent = data.files?.['yugen_bonsai.json']?.content;
     if(!fileContent) throw new Error('Fichier sync introuvable dans le Gist');
-    let collection = JSON.parse(fileContent);
+    let parsed = JSON.parse(fileContent);
+    let collection;
     // Décompresser si nécessaire
-    if(collection.c && collection.d && typeof LZString!=='undefined'){
-      collection = JSON.parse(LZString.decompressFromBase64(collection.d));
+    if(parsed.c && parsed.d){
+      if(typeof LZString==='undefined') throw new Error('LZString non chargé');
+      const decompressed = LZString.decompressFromBase64(parsed.d);
+      if(!decompressed) throw new Error('Décompression échouée');
+      collection = JSON.parse(decompressed);
+    } else {
+      collection = parsed;
     }
-    if(!collection.arbres||!Array.isArray(collection.arbres)) throw new Error('Format non reconnu');
+    if(!collection||!collection.arbres||!Array.isArray(collection.arbres)) throw new Error('Format non reconnu — arbres manquants');
     const nbActuel = db.arbres.length;
     if(nbActuel>0){
       if(!confirm(nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\nOK = Remplacer par la sync\nAnnuler = Abandonner')) return;
