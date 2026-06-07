@@ -6636,7 +6636,7 @@ async function syncEnvoyer(){
 
     const body = JSON.stringify({
       description:'Yūgen Bonsaï sync',
-      public: false,
+      public: true,
       files:{'yugen_bonsai.json':{content: JSON.stringify({c:true,d:compressed})}}
     });
 
@@ -6646,12 +6646,13 @@ async function syncEnvoyer(){
     } else {
       resp = await fetch('https://api.github.com/gists',{method:'POST',headers,body});
     }
+    const respText = await resp.text();
     if(!resp.ok){
       let msg='HTTP '+resp.status;
-      try{const e=await resp.json();msg+=' — '+(e.message||'');}catch(_){}
+      try{const e=JSON.parse(respText);msg+=' — '+(e.message||e.errors?.[0]?.message||respText.slice(0,100));}catch(_){msg+=' — '+respText.slice(0,100);}
       throw new Error(msg);
     }
-    data = await resp.json();
+    data = JSON.parse(respText);
     const id = data.id || gistId;
     if(!id) throw new Error('ID non reçu');
     localStorage.setItem('sync_bin_id', id);
