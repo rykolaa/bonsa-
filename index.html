@@ -6627,21 +6627,24 @@ async function syncEnvoyer(){
   if(status) status.textContent = '⏳ Envoi en cours…';
   try{
     const raw = _buildSyncPayloadRaw();
-    const jsonStr = JSON.stringify(raw);
-    // Compresser avec LZString
-    const compressed = typeof LZString!=='undefined'
-      ? LZString.compressToBase64(jsonStr)
-      : jsonStr;
+    const arbres = raw.arbres;
+    const meta = {...raw, arbres:[]};
+    const CHUNK = 50;
+    const files = {'yugen_meta.json': {content: JSON.stringify(meta)}};
+    for(let i=0; i*CHUNK < arbres.length; i++){
+      const chunk = arbres.slice(i*CHUNK, (i+1)*CHUNK);
+      files['yugen_arbres_'+i+'.json'] = {content: JSON.stringify(chunk)};
+    }
+    files['yugen_index.json'] = {content: JSON.stringify({
+      total: arbres.length,
+      chunks: Math.ceil(arbres.length/CHUNK),
+      savedAt: new Date().toISOString()
+    })};
 
     const gistId = localStorage.getItem('sync_bin_id');
     const headers = {'Content-Type':'application/json','Accept':'application/vnd.github+json'};
     if(GIST_TOKEN) headers['Authorization']='Bearer '+GIST_TOKEN;
-
-    const body = JSON.stringify({
-      description:'Yūgen Bonsaï sync',
-      public: true,
-      files:{'yugen_bonsai.json':{content: JSON.stringify({c:true,d:compressed})}}
-    });
+    const body = JSON.stringify({description:'Yūgen Bonsaï sync', public:true, files});
 
     let resp, data;
     if(gistId){
@@ -6660,7 +6663,7 @@ async function syncEnvoyer(){
     if(!id) throw new Error('ID non reçu');
     localStorage.setItem('sync_bin_id', id);
     localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
-    if(status) status.innerHTML = '✅ Envoyé — <strong>'+db.arbres.length+' arbres</strong>';
+    if(status) status.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong>';
     ouvrirSyncModal();
   } catch(e){
     if(status) status.textContent = '❌ Erreur : '+e.message;
@@ -6680,20 +6683,25 @@ async function syncRecevoir(){
     const resp = await fetch('https://api.github.com/gists/'+code, {headers});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
-    const fileContent = data.files?.['yugen_bonsai.json']?.content;
-    if(!fileContent) throw new Error('Fichier sync introuvable dans le Gist');
-    let parsed = JSON.parse(fileContent);
-    let collection;
-    // Décompresser si nécessaire
-    if(parsed.c && parsed.d){
-      if(typeof LZString==='undefined') throw new Error('LZString non chargé');
-      const decompressed = LZString.decompressFromBase64(parsed.d);
-      if(!decompressed) throw new Error('Décompression échouée');
-      collection = JSON.parse(decompressed);
-    } else {
-      collection = parsed;
+    // Lire l'index
+    const idxContent = data.files?.['yugen_index.json']?.content;
+    if(!idxContent) throw new Error('Fichier index introuvable — vérifiez le code');
+    const idx = JSON.parse(idxContent);
+    const chunks = idx.chunks || 1;
+    // Lire les métadonnées
+    const metaContent = data.files?.['yugen_meta.json']?.content;
+    if(!metaContent) throw new Error('Fichier meta introuvable');
+    const collection = JSON.parse(metaContent);
+    // Lire les chunks d'arbres
+    collection.arbres = [];
+    for(let i=0; i<chunks; i++){
+      const chunkContent = data.files?.['yugen_arbres_'+i+'.json']?.content;
+      if(chunkContent){
+        const chunk = JSON.parse(chunkContent);
+        collection.arbres.push(...chunk);
+      }
     }
-    if(!collection||!collection.arbres||!Array.isArray(collection.arbres)) throw new Error('Format non reconnu — arbres manquants');
+    if(!collection.arbres||collection.arbres.length===0) throw new Error('Format non reconnu — arbres manquants');
     const nbActuel = db.arbres.length;
     if(nbActuel>0){
       if(!confirm(nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\nOK = Remplacer par la sync\nAnnuler = Abandonner')) return;
