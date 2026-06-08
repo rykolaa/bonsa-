@@ -1311,6 +1311,7 @@ function renderCollection(c){
         <span style="font-size:14px">${_allSel?'☑':'☐'}</span> ${_allSel?'Tout désélect.':'Tout sélect.'}
       </button>
       ${etiqSel.size>0?`<button onclick="ouvrirSoinGroupe()" style="font-size:12px;padding:4px 12px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">✅ Soin groupé <strong>(${etiqSel.size})</strong></button>`:''}
+      ${etiqSel.size>0?`<button onclick="imprimerFichePDF([...etiqSel])" style="font-size:12px;padding:4px 12px;background:#e8f0ff;color:#1a4fa5;border:1px solid #b0c8f0;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">📄 PDF <strong>(${etiqSel.size})</strong></button>`:''}
       <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
         <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
         <option value="nom"    ${state.sort==='nom'   ?'selected':''}>🔤 Nom A→Z</option>
@@ -2516,6 +2517,7 @@ function openDetail(id){
       <div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
         <button class="btn btn-primary" onclick="openEditModal(${a.id})" style="flex:1">✏️ Modifier</button>
         <button class="btn" onclick="genererEtiquette(${a.id})" title="Générer étiquette QR" style="background:var(--moss-light);color:var(--moss);border-color:var(--moss-mid)">🏷️ Étiquette</button>
+        <button class="btn" onclick="imprimerFichePDF([${a.id}])" title="Imprimer fiche PDF" style="background:#e8f0ff;color:#1a4fa5;border-color:#b0c8f0">📄 PDF</button>
         <button class="btn btn-danger" onclick="deleteArbre(${a.id})">🗑️</button>
       </div>
     </div>
@@ -6434,6 +6436,175 @@ window.onload=function(){
 <\/script>
 </body></html>`);
   win.document.close();
+}
+
+function imprimerFichePDF(ids){
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+
+  const w = window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>Fiches Yūgen Bonsaï</title>
+<style>
+  @page { size: A4; margin: 0; }
+  *{ box-sizing:border-box; margin:0; padding:0; font-family:'Georgia',serif; }
+  body{ background:#fff; color:#1a1a18; }
+
+  .page{ width:210mm; min-height:297mm; page-break-after:always; display:grid; grid-template-rows:1fr 1fr; }
+  .page:last-child{ page-break-after:auto; }
+
+  /* RECTO */
+  .recto{ padding:12mm 14mm 8mm; display:flex; flex-direction:column; gap:6mm; border-bottom:1px dashed #ccc; }
+  .header{ display:flex; align-items:flex-start; gap:8mm; }
+  .photo-box{ width:55mm; height:55mm; border-radius:4mm; overflow:hidden; flex-shrink:0; background:#f0ede8; display:flex; align-items:center; justify-content:center; font-size:36px; }
+  .photo-box img{ width:100%; height:100%; object-fit:cover; }
+  .header-info{ flex:1; }
+  .arbre-num{ font-size:9pt; color:#888; margin-bottom:1mm; }
+  .arbre-nom{ font-size:17pt; font-weight:700; color:#1a1a18; line-height:1.2; margin-bottom:2mm; }
+  .arbre-espece{ font-size:10pt; color:#555; font-style:italic; margin-bottom:3mm; }
+  .badges{ display:flex; flex-wrap:wrap; gap:2mm; margin-bottom:3mm; }
+  .badge{ font-size:8pt; padding:1mm 3mm; border-radius:3mm; background:#e8f2ec; color:#3d6b4f; font-weight:600; }
+  .badge.origin{ background:#fff8e8; color:#a07010; }
+  .badge.sante{ color:#fff; padding:1mm 3mm; border-radius:3mm; font-weight:700; }
+
+  .infos-grid{ display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:3mm; }
+  .info-block{ background:#f8f7f4; border-radius:2mm; padding:2mm 3mm; }
+  .info-label{ font-size:7pt; color:#888; text-transform:uppercase; letter-spacing:.05em; margin-bottom:0.5mm; }
+  .info-val{ font-size:10pt; font-weight:600; }
+
+  .style-block{ display:flex; align-items:center; gap:4mm; background:#f8f7f4; border-radius:3mm; padding:3mm 4mm; }
+  .style-img{ width:18mm; height:18mm; object-fit:cover; border-radius:2mm; }
+  .style-info .kanji{ font-size:13pt; font-weight:700; }
+  .style-info .romaji{ font-size:9pt; color:#555; }
+  .style-info .desc{ font-size:8pt; color:#777; margin-top:1mm; }
+
+  /* VERSO */
+  .verso{ padding:8mm 14mm 12mm; display:flex; flex-direction:column; gap:5mm; }
+  .section-title{ font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#3d6b4f; border-bottom:1px solid #e0ddd5; padding-bottom:1.5mm; margin-bottom:3mm; }
+
+  .travaux-table{ width:100%; border-collapse:collapse; font-size:8.5pt; }
+  .travaux-table th{ background:#3d6b4f; color:#fff; padding:2mm 3mm; text-align:left; font-size:8pt; }
+  .travaux-table td{ padding:2mm 3mm; border-bottom:1px solid #ede; vertical-align:top; }
+  .travaux-table tr:nth-child(even) td{ background:#f8f7f4; }
+
+  .rempotages-list{ font-size:8.5pt; }
+  .remp-item{ padding:2mm 0; border-bottom:1px solid #f0ede8; }
+  .remp-date{ font-weight:600; color:#3d6b4f; }
+
+  .notes-box{ background:#fffdf5; border:1px solid #ede; border-radius:2mm; padding:3mm; font-size:8.5pt; color:#555; min-height:15mm; }
+
+  .footer{ margin-top:auto; display:flex; justify-content:space-between; align-items:center; font-size:7pt; color:#aaa; padding-top:3mm; border-top:1px solid #f0ede8; }
+
+  @media print{
+    body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style></head><body>`);
+
+  arbres.forEach((a,idx)=>{
+    const styleObj = STYLES.find(s=>s.fr===a.style||s.romaji===a.style||s.kanji===a.style);
+    const photoPrinc = (a.photos||[]).find(p=>p.dataUrl);
+    const photoSrc = photoPrinc?.dataUrl || '';
+    const emoji = getEmoji(a.espece);
+    const sante = a.sante||0;
+    const santeCol = sante>=75?'#3d6b4f':sante>=50?'#d4960a':'#b85c2a';
+    const travaux = [...(a.travaux||[])].sort((x,y)=>y.date.localeCompare(x.date)).slice(0,12);
+    const remps = (db.rempotages||[]).filter(r=>r.arbre_id===a.id).sort((x,y)=>y.date.localeCompare(x.date));
+    const couts = calculCoutArbre(a);
+
+    w.document.write(`<div class="page">
+
+    <!-- RECTO -->
+    <div class="recto">
+      <div class="header">
+        <div class="photo-box">
+          ${photoSrc?`<img src="${photoSrc}">`:`<span>${emoji}</span>`}
+        </div>
+        <div class="header-info">
+          <div class="arbre-num">${a.num||''}</div>
+          <div class="arbre-nom">${a.nom}</div>
+          <div class="arbre-espece">${a.espece}${a.nom_latin?` — <em>${a.nom_latin}</em>`:''}</div>
+          <div class="badges">
+            <span class="badge">${a.stade||'—'}</span>
+            <span class="badge origin">${a.origine||'—'}</span>
+            <span class="badge sante" style="background:${santeCol}">❤ ${sante}%</span>
+            ${a.localisation?`<span class="badge" style="background:#f0f4ff;color:#4060c0">📍 ${a.localisation}</span>`:''}
+          </div>
+          ${a.prochain_soin?`<div style="font-size:8.5pt;color:#a07010;background:#fff8e8;padding:1.5mm 3mm;border-radius:2mm;display:inline-block">📅 Prochain soin : <strong>${a.type_soin||''}</strong> — ${fmtDate(a.prochain_soin)}</div>`:''}
+        </div>
+      </div>
+
+      <div class="infos-grid">
+        <div class="info-block"><div class="info-label">Hauteur</div><div class="info-val">${a.hauteur?a.hauteur+' cm':'—'}</div></div>
+        <div class="info-block"><div class="info-label">Ø Tronc</div><div class="info-val">${a.diam_tronc?a.diam_tronc+' cm':'—'}</div></div>
+        <div class="info-block"><div class="info-label">Ø Houppier</div><div class="info-val">${a.diam_houppier?a.diam_houppier+' cm':'—'}</div></div>
+        <div class="info-block"><div class="info-label">Nébari</div><div class="info-val">${a.diam_nebari?a.diam_nebari+' cm':'—'}</div></div>
+        <div class="info-block"><div class="info-label">Acquisition</div><div class="info-val">${fmtDate(a.date_acq)}</div></div>
+        <div class="info-block"><div class="info-label">Prix achat</div><div class="info-val">${fmtCHF(a.prix||0)}</div></div>
+        <div class="info-block"><div class="info-label">Coût total</div><div class="info-val" style="color:#3d6b4f">${fmtCHF(Math.round(couts.total))}</div></div>
+        <div class="info-block"><div class="info-label">Altitude</div><div class="info-val">${a.alt?a.alt+' m':'—'}</div></div>
+      </div>
+
+      ${styleObj?`<div class="style-block">
+        ${styleObj.img?`<img class="style-img" src="${styleObj.img}">`:''}
+        <div class="style-info">
+          <div class="kanji">${styleObj.kanji} <span style="font-size:10pt;font-weight:400">${styleObj.romaji}</span></div>
+          <div class="romaji">${styleObj.fr}</div>
+          ${styleObj.desc?`<div class="desc">${styleObj.desc.substring(0,120)}${styleObj.desc.length>120?'…':''}</div>`:''}
+        </div>
+      </div>`:''}
+
+      ${a.pot?`<div style="font-size:8.5pt;color:#555">🪴 <strong>Pot actuel :</strong> ${a.pot}</div>`:''}
+    </div>
+
+    <!-- VERSO -->
+    <div class="verso">
+      <div>
+        <div class="section-title">Historique des travaux</div>
+        ${travaux.length?`<table class="travaux-table">
+          <tr><th>Date</th><th>Type</th><th>Description</th><th>Coût</th></tr>
+          ${travaux.map(t=>`<tr>
+            <td style="white-space:nowrap">${fmtDate(t.date)}</td>
+            <td style="white-space:nowrap">${t.type||'—'}</td>
+            <td style="color:#555">${t.desc?t.desc.substring(0,80)+(t.desc.length>80?'…':''):'—'}</td>
+            <td style="white-space:nowrap">${t.cout?fmtCHF(t.cout):''}</td>
+          </tr>`).join('')}
+        </table>`:'<div style="color:#aaa;font-size:8.5pt">Aucun travail enregistré</div>'}
+      </div>
+
+      ${remps.length?`<div>
+        <div class="section-title">Rempotages</div>
+        <div class="rempotages-list">
+          ${remps.slice(0,4).map(r=>{
+            const mel = db.melanges.find(m=>m.id===r.melange_id);
+            return `<div class="remp-item">
+              <span class="remp-date">${fmtDate(r.date)}</span>
+              ${r.pot_nom?` · ${r.pot_nom}`:''}
+              ${r.pot_l&&r.pot_w?` (${r.pot_l}×${r.pot_w}${r.pot_h?'×'+r.pot_h:''}cm)`:''}
+              ${mel?` · <em>${mel.nom}</em>${r.litres_utilises?' — '+r.litres_utilises+'L':''}`:''}
+              ${r.notes?`<br><span style="color:#777">${r.notes.substring(0,100)}</span>`:''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`:''}
+
+      ${a.notes?`<div>
+        <div class="section-title">Notes</div>
+        <div class="notes-box">${a.notes.replace(/\n/g,'<br>')}</div>
+      </div>`:''}
+
+      <div class="footer">
+        <span>Yūgen Bonsaï — ${a.nom}</span>
+        <span>${new Date().toLocaleDateString('fr-CH')}</span>
+        ${a.gps?`<span>📍 ${a.gps}</span>`:''}
+      </div>
+    </div>
+
+  </div>`);
+  });
+
+  w.document.write('</body></html>');
+  w.document.close();
+  w.onload = ()=>{ w.focus(); w.print(); };
 }
 
 function genererEtiquette(id){
