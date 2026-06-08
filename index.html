@@ -501,6 +501,27 @@ const STYLES = [
 ];
 // Helpers pour compatibilité avec le reste du code
 function styleFr(s){ const f=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s); return f?f.fr:s; }
+// Calcule le coût total investi dans un arbre
+// = prix achat + travaux (qui incluent déjà les produits) + pot actuel + substrats des rempotages
+function calculCoutArbre(a){
+  const prixAchat = a.prix || 0;
+  const coutTravaux = (a.travaux||[]).reduce((s,t)=>s+(t.cout||0), 0);
+  // Pot actuel (dernier rempotage avec pot_id)
+  const remps = (db.rempotages||[]).filter(r=>r.arbre_id===a.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const dernierRemp = remps[0];
+  const potActuel = dernierRemp?.pot_id ? db.pots.find(p=>p.id===dernierRemp.pot_id) : null;
+  const coutPot = potActuel?.prix || 0;
+  // Substrats de tous les rempotages (litres × prix/litre)
+  const coutSubstrats = remps.reduce((s,r)=>{
+    if(!r.melange_id || !r.litres_utilises) return s;
+    const mel = db.melanges.find(m=>m.id===r.melange_id);
+    if(!mel) return s;
+    return s + calculPrixLitreMelange(mel) * r.litres_utilises;
+  }, 0);
+  return { prixAchat, coutTravaux, coutPot, coutSubstrats,
+           total: prixAchat + coutTravaux + coutPot + coutSubstrats };
+}
+
 function _normStyle(s){ return (s && typeof s==='object') ? (s.fr||s.romaji||s.kanji||'') : (s||''); }
 function styleLabel(s){ const v=_normStyle(s); const f=STYLES.find(x=>x.fr===v||x.romaji===v||x.kanji===v); return f?`${f.kanji} ${f.romaji} — ${f.fr}`:v; }
 function styleShort(s){ const v=_normStyle(s); const f=STYLES.find(x=>x.fr===v||x.romaji===v||x.kanji===v); return f?`${f.kanji} · ${f.fr}`:v; }
@@ -1230,6 +1251,12 @@ function renderCollection(c){
     <div class="kpi"><div class="kpi-label">Arbres</div><div class="kpi-val">${all.length}</div></div>
     <div class="kpi"><div class="kpi-label">Espèces</div><div class="kpi-val">${new Set(all.map(a=>a.espece)).size}</div></div>
     <div class="kpi"><div class="kpi-label">Styles</div><div class="kpi-val">${new Set(all.map(a=>a.style)).size}</div></div>
+    ${(()=>{
+      const totalAchat = all.reduce((s,a)=>s+(a.prix||0),0);
+      const totalTravaux = all.reduce((s,a)=>s+(a.travaux||[]).reduce((st,t)=>st+(t.cout||0),0),0);
+      const total = totalAchat + totalTravaux;
+      return total>0 ? `<div class="kpi" title="Achat: ${fmtCHF(totalAchat)} + Travaux: ${fmtCHF(totalTravaux)}"><div class="kpi-label">Investi collection</div><div class="kpi-val" style="font-size:16px">${fmtCHF(total)}</div></div>` : '';
+    })()}
     <div class="kpi"><div class="kpi-label">Santé moy.</div><div class="kpi-val">${Math.round(all.reduce((s,a)=>s+a.sante,0)/Math.max(all.length,1))}%</div></div>
     <div class="kpi ${urgent.length>0?'warn':''}"><div class="kpi-label">Soins urgents</div><div class="kpi-val">${urgent.length}</div><div class="kpi-sub">dans 14 jours</div></div>
   </div>`;
@@ -2180,14 +2207,44 @@ function renderStats(c){
   const ORIGIN_COLORS = {Achat:'#4a8a42',Yamadori:'#b8860b',Semis:'#6b6b5e',Bouture:'#8b4a2f',Don:'#5b7a9a',Marcotte:'#9a5b7a'};
 
   const totalVal = all.reduce((s,a)=>{const v=a.valuations&&a.valuations.length?a.valuations[a.valuations.length-1].valeur:0;return s+v},0);
+  // Calcul des coûts avec la fonction unifiée
+  const coutsArbres = all.map(a=>({nom:a.nom, ...calculCoutArbre(a)}));
+  const totalAchat = coutsArbres.reduce((s,c)=>s+c.prixAchat,0);
+  const totalTravaux = coutsArbres.reduce((s,c)=>s+c.coutTravaux,0);
+  const totalPots = coutsArbres.reduce((s,c)=>s+c.coutPot,0);
+  const totalSubstrats = coutsArbres.reduce((s,c)=>s+c.coutSubstrats,0);
+  const totalInvesti = coutsArbres.reduce((s,c)=>s+c.total,0);
+
+  // Top 10 arbres les plus coûteux
+  const arbresParCout = coutsArbres
+  .filter(c=>c.total>0)
+  .sort((a,b)=>b.total-a.total)
+  .slice(0,10);
 
   c.innerHTML=`<div class="kpi-row">
     <div class="kpi"><div class="kpi-label">Collection</div><div class="kpi-val">${all.length} arbres</div></div>
     <div class="kpi"><div class="kpi-label">Travaux enregistrés</div><div class="kpi-val">${allTrav.length}</div></div>
-    <div class="kpi"><div class="kpi-label">Âge moyen estimé</div><div class="kpi-val">—</div></div>
+    <div class="kpi"><div class="kpi-label">Prix d'achat total</div><div class="kpi-val">${fmtCHF(totalAchat)}</div></div>
+    <div class="kpi"><div class="kpi-label">Coût travaux total</div><div class="kpi-val">${fmtCHF(totalTravaux)}</div></div>
+    <div class="kpi"><div class="kpi-label">Pots actuels</div><div class="kpi-val">${fmtCHF(totalPots)}</div></div>
+    <div class="kpi"><div class="kpi-label">Substrats rempotages</div><div class="kpi-val">${fmtCHF(Math.round(totalSubstrats))}</div></div>
+    <div class="kpi" style="background:var(--moss-light);border:1px solid rgba(45,90,39,.2)"><div class="kpi-label">Total investi</div><div class="kpi-val" style="color:var(--moss)">${fmtCHF(Math.round(totalInvesti))}</div></div>
     <div class="kpi"><div class="kpi-label">Santé moyenne</div><div class="kpi-val">${Math.round(all.reduce((s,a)=>s+a.sante,0)/Math.max(all.length,1))}%</div></div>
     <div class="kpi"><div class="kpi-label">Valeur estimée</div><div class="kpi-val" style="color:var(--gold)">${fmtCHF(totalVal)}</div></div>
   </div>
+  ${arbresParCout.length ? `<div class="stats-card" style="margin-bottom:16px">
+    <div class="stats-card-title">💰 Top arbres par coût investi</div>
+    ${arbresParCout.map((a,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+      <span style="font-size:11px;color:var(--stone);width:16px">${i+1}.</span>
+      <span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.nom}</span>
+      <span style="font-size:11px;color:var(--stone)" title="Achat: ${fmtCHF(a.achat)} + Travaux: ${fmtCHF(a.travaux)}">
+        ${fmtCHF(Math.round(a.total*100)/100)}
+      </span>
+      <div style="width:80px;background:#f0efeb;border-radius:4px;height:6px">
+        <div style="width:${Math.round(a.total/arbresParCout[0].total*100)}%;background:var(--moss);height:6px;border-radius:4px"></div>
+      </div>
+    </div>`).join('')}
+  </div>` : ''}
   <div class="stats-grid">
     <div class="stats-card">
       <div class="stats-card-title">Travaux par type</div>
@@ -2387,9 +2444,26 @@ function openDetail(id){
 
       <!-- Provenance -->
       <div class="dp-section-title">Provenance & acquisition</div>
+      ${(()=>{
+        const c = calculCoutArbre(a);
+        if(c.total===0) return '';
+        const details = [
+          c.prixAchat>0 ? 'Achat '+fmtCHF(c.prixAchat) : '',
+          c.coutTravaux>0 ? 'Travaux '+fmtCHF(c.coutTravaux) : '',
+          c.coutPot>0 ? 'Pot '+fmtCHF(c.coutPot) : '',
+          c.coutSubstrats>0 ? 'Substrats '+fmtCHF(Math.round(c.coutSubstrats*100)/100) : '',
+        ].filter(Boolean).join(' + ');
+        return `<div style="background:var(--moss-light);border:1px solid rgba(45,90,39,.15);border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:11px;color:var(--stone);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Coût total investi</div>
+            <div style="font-size:11px;color:var(--stone);margin-top:2px">${details}</div>
+          </div>
+          <div style="font-size:20px;font-weight:700;color:var(--moss)">${fmtCHF(Math.round(c.total*100)/100)}</div>
+        </div>`;
+      })()}
       <div class="info-grid" style="gap:5px">
         <div class="info-block"><div class="info-block-label">Acquisition</div><div class="info-block-val" style="font-size:12px">${fmtDate(a.date_acq)}</div></div>
-        <div class="info-block"><div class="info-block-label">Prix</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix)}</div></div>
+        <div class="info-block"><div class="info-block-label">Prix d'achat</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix)}</div></div>
         ${a.pepiniere?`<div class="info-block" style="grid-column:1/-1"><div class="info-block-label">Pépinière / Fournisseur</div><div class="info-block-val" style="font-size:12px">${a.pepiniere}</div></div>`:''}
         ${a.alt?`<div class="info-block"><div class="info-block-label">Altitude</div><div class="info-block-val" style="font-size:12px">${a.alt} m</div></div>`:''}
         ${a.gps?`<div class="info-block"><div class="info-block-label">GPS</div><div class="info-block-val" style="font-size:12px">${a.gps}</div></div>`:''}
@@ -3761,6 +3835,7 @@ function renderAtelier(c){
     {id:'especes',    label:'🌿 Espèces'},
     {id:'travaux',    label:'✂️ Types de travaux'},
     {id:'photos',     label:'📸 Photos'},
+    {id:'depenses',   label:'💰 Dépenses'},
   ];
   let html = `<div class="atelier-tabs">${tabs.map(t=>`<button class="atelier-tab ${tab===t.id?'active':''}" onclick="state.atelierTab='${t.id}';renderAtelier(document.getElementById('content'))">${t.label}</button>`).join('')}</div>`;
   c.innerHTML = html;
@@ -3770,7 +3845,81 @@ function renderAtelier(c){
   else if(tab==='especes') renderEspeces(c);
   else if(tab==='travaux') renderTravaux(c);
   else if(tab==='photos') renderPhotosAtelier(c);
+  else if(tab==='depenses') renderDepenses(c);
   else renderSubstrats(c);
+}
+
+// ── DÉPENSES ───────────────────────────────────────────────────────────────────
+function renderDepenses(c){
+  const existing = c.innerHTML;
+  const today = new Date().toISOString().split('T')[0];
+  const yearStart = new Date().getFullYear() + '-01-01';
+  const dateFrom = state.depDateFrom || yearStart;
+  const dateTo   = state.depDateTo   || today;
+
+  // Calcul coût pots achetés dans la période
+  const potsAchetes = (db.pots||[]).filter(p=>p.date_acq && p.date_acq>=dateFrom && p.date_acq<=dateTo);
+  const totalPots = potsAchetes.reduce((s,p)=>s+(p.prix||0),0);
+
+  // Substrats : sac_prix × sacs_total — pas de date d'achat, on affiche le total stock
+  const totalSubstrats = (db.substrats||[]).reduce((s,x)=>s+(x.sac_prix||0)*(x.sacs_total||0),0);
+
+  // Engrais
+  const engraisFiltre = (db.engrais||[]).filter(e=>!e.date_achat||(e.date_achat>=dateFrom&&e.date_achat<=dateTo));
+  const totalEngrais = engraisFiltre.reduce((s,e)=>s+(e.prix||0),0);
+
+  // Produits phytosanitaires
+  const produitsFiltre = (db.produits||[]).filter(p=>!p.date_achat||(p.date_achat>=dateFrom&&p.date_achat<=dateTo));
+  const totalProduits = produitsFiltre.reduce((s,p)=>s+(p.prix||0),0);
+
+  // Total général
+  const grandTotal = totalPots + totalSubstrats + totalEngrais + totalProduits;
+
+  let html = `
+  <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--moss)">📅 Période d'analyse</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div class="fg"><label>Du</label><input type="date" value="${dateFrom}" onchange="state.depDateFrom=this.value;renderAtelier(document.getElementById('content'))"></div>
+      <div class="fg"><label>Au</label><input type="date" value="${dateTo}" onchange="state.depDateTo=this.value;renderAtelier(document.getElementById('content'))"></div>
+      <button class="btn" onclick="state.depDateFrom='${yearStart}';state.depDateTo='${today}';renderAtelier(document.getElementById('content'))">Cette année</button>
+      <button class="btn" onclick="state.depDateFrom='${new Date().getFullYear()-1}-01-01';state.depDateTo='${new Date().getFullYear()-1}-12-31';renderAtelier(document.getElementById('content'))">Année précédente</button>
+      <button class="btn" onclick="state.depDateFrom='2000-01-01';state.depDateTo='${today}';renderAtelier(document.getElementById('content'))">Tout</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+    <div style="background:var(--moss-light);border-radius:10px;padding:16px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone);margin-bottom:6px">⬛ Pots achetés</div>
+      <div style="font-size:24px;font-weight:700;color:var(--moss)">${fmtCHF(totalPots)}</div>
+      <div style="font-size:11px;color:var(--stone);margin-top:4px">${potsAchetes.length} pot${potsAchetes.length>1?'s':''}</div>
+    </div>
+    <div style="background:#fff8e8;border:1px solid #e8d4a0;border-radius:10px;padding:16px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone);margin-bottom:6px">🌱 Substrats (stock total)</div>
+      <div style="font-size:24px;font-weight:700;color:#a07010">${fmtCHF(totalSubstrats)}</div>
+      <div style="font-size:11px;color:var(--stone);margin-top:4px">${(db.substrats||[]).length} type${(db.substrats||[]).length>1?'s':''}</div>
+    </div>
+    <div style="background:#f0f8ff;border:1px solid #c0d8f0;border-radius:10px;padding:16px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone);margin-bottom:6px">🌿 Engrais</div>
+      <div style="font-size:24px;font-weight:700;color:#185fa5">${fmtCHF(totalEngrais)}</div>
+      <div style="font-size:11px;color:var(--stone);margin-top:4px">${engraisFiltre.length} produit${engraisFiltre.length>1?'s':''}</div>
+    </div>
+    <div style="background:#fff0f0;border:1px solid #f0c0c0;border-radius:10px;padding:16px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone);margin-bottom:6px">💊 Phytosanitaires</div>
+      <div style="font-size:24px;font-weight:700;color:#c02020">${fmtCHF(totalProduits)}</div>
+      <div style="font-size:11px;color:var(--stone);margin-top:4px">${produitsFiltre.length} produit${produitsFiltre.length>1?'s':''}</div>
+    </div>
+  </div>
+
+  <div style="background:var(--moss);color:#fff;border-radius:10px;padding:16px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:14px;font-weight:600">💰 Total dépensé pour la collection</div>
+    <div style="font-size:28px;font-weight:700">${fmtCHF(grandTotal)}</div>
+  </div>
+
+  <div style="margin-top:20px;font-size:12px;color:var(--stone);padding:10px;background:#f8f8f6;border-radius:8px">
+    ℹ️ Les substrats sont affichés en valeur totale du stock acheté (sans filtre de date). Pour les engrais et produits, la date d'achat doit être renseignée dans la fiche pour être filtrée.
+  </div>`;
+
+  c.innerHTML = existing + html;
 }
 
 // ── REMPOTAGES ─────────────────────────────────────────────────────────────────
@@ -4078,6 +4227,7 @@ function openEngraisModal(id){
     <div class="form-row">
       <div class="fg"><label>Quantité en stock</label><input id="eng-nb" type="number" min="0" step="1" value="${isEdit?e.nb_unites||0:0}" oninput="calcValEngStock()"></div>
       <div class="fg"><label>Seuil d'alerte (⚠️ si ≤)</label><input id="eng-seuil" type="number" min="0" step="1" value="${isEdit?e.seuil_alerte||1:1}"></div>
+      <div class="fg"><label>Date d'achat</label><input id="eng-date-achat" type="date" value="${isEdit?e.date_achat||'':''}"></div>
     </div>
     <div id="eng-val-stock" style="font-size:12px;color:var(--gold);margin-bottom:10px"></div>
     <div class="form-row one"><div class="fg"><label>Notes / fréquence</label><textarea id="eng-notes" rows="2" placeholder="Ex: 1 pastille par 100ml de pot, toutes les 3 semaines">${isEdit?e.notes||'':''}</textarea></div></div>
@@ -4110,7 +4260,8 @@ function sauvegarderEngrais(id){
     unite:document.getElementById('eng-unite').value||'sac',
     nb_unites:parseFloat(document.getElementById('eng-nb').value)||0,
     seuil_alerte:parseFloat(document.getElementById('eng-seuil').value)||1,
-    notes:document.getElementById('eng-notes').value};
+    notes:document.getElementById('eng-notes').value,
+    date_achat:document.getElementById('eng-date-achat').value||''};
   if(id){Object.assign(db.engrais.find(x=>x.id===id),data);}
   else{data.id=db.nextEngId++;db.engrais.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
@@ -4161,6 +4312,7 @@ function openProduitModal(id){
     <div class="form-row">
       <div class="fg"><label>Quantité en stock</label><input id="prod-nb" type="number" min="0" step="1" value="${isEdit?p.nb_unites||0:0}" oninput="calcValProdStock()"></div>
       <div class="fg"><label>Seuil d'alerte (⚠️ si ≤)</label><input id="prod-seuil" type="number" min="0" step="1" value="${isEdit?p.seuil_alerte||1:1}"></div>
+      <div class="fg"><label>Date d'achat</label><input id="prod-date-achat" type="date" value="${isEdit?p.date_achat||'':''}"></div>
     </div>
     <div id="prod-val-stock" style="font-size:12px;color:var(--gold);margin-bottom:10px"></div>
     <div class="form-row one"><div class="fg"><label>Notes / précautions</label><textarea id="prod-notes" rows="2" placeholder="Ex: Porter des gants. Traiter le soir. Efficace contre oïdium.">${isEdit?p.notes||'':''}</textarea></div></div>
@@ -4195,7 +4347,8 @@ function sauvegarderProduit(id){
     unite:document.getElementById('prod-unite').value||'flacon',
     nb_unites:parseFloat(document.getElementById('prod-nb').value)||0,
     seuil_alerte:parseFloat(document.getElementById('prod-seuil').value)||1,
-    notes:document.getElementById('prod-notes').value};
+    notes:document.getElementById('prod-notes').value,
+    date_achat:document.getElementById('prod-date-achat').value||''};
   if(id){Object.assign(db.produits.find(x=>x.id===id),data);}
   else{data.id=db.nextProdId++;db.produits.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
@@ -4994,10 +5147,11 @@ function openSubstratModal(id){
       <div class="fg"><label>Couleur</label><input id="s-couleur" type="color" value="${isEdit?s.couleur||'#c8703a':'#c8703a'}" style="height:36px;width:100%;border-radius:6px;border:1px solid var(--border)"></div>
     </div>
     <div class="form-section">Sacs achetés</div>
-    <div class="form-row three">
+    <div class="form-row">
       <div class="fg"><label>Contenance du sac (L)</label><input id="s-sac-l" type="number" min="1" value="${isEdit?s.sac_litres:14}"></div>
       <div class="fg"><label>Prix du sac (CHF)</label><input id="s-sac-p" type="number" min="0" step="0.5" value="${isEdit?s.sac_prix:0}"></div>
       <div class="fg"><label>Nb de sacs achetés</label><input id="s-sacs" type="number" min="1" value="${isEdit?s.sacs_total:1}"></div>
+      <div class="fg"><label>Date d'achat</label><input id="s-date-achat" type="date" value="${isEdit?s.date_achat||'':''}"></div>
     </div>
     <div class="form-row">
       <div class="fg"><label>Litres restants actuellement</label><input id="s-restants" type="number" step="0.5" min="0" value="${isEdit?s.litres_restants:''}" placeholder="Après soustraction des utilisations"></div>
@@ -5028,7 +5182,8 @@ function sauvegarderSubstrat(id){
   const data={nom,marque:document.getElementById('s-marque').value,granulo:document.getElementById('s-gran').value,couleur:document.getElementById('s-couleur').value,
     sac_litres:sacL,sac_prix:parseFloat(document.getElementById('s-sac-p').value)||0,sacs_total:sacs,
     litres_restants:parseFloat(document.getElementById('s-restants').value)||(sacL*sacs),
-    notes:document.getElementById('s-notes').value};
+    notes:document.getElementById('s-notes').value,
+    date_achat:document.getElementById('s-date-achat').value||''};
   if(id){Object.assign(db.substrats.find(x=>x.id===id),data);}
   else{data.id=db.nextSubId++;db.substrats.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
