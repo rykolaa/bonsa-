@@ -350,6 +350,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
         <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this)">
       </label>
       <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
+      <button class="btn-add" style="background:#475569;font-size:11px;padding:5px 10px" onclick="ouvrirVersions()" title="Restaurer une sauvegarde automatique">🕐 Versions</button>
       <button class="btn-add" style="background:#b45309;font-size:11px;padding:5px 10px" onclick="repairerPhotos()" title="Corriger l'orientation de toutes les photos (rotation EXIF)">🔃 Orienter photos</button>
     </div>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
@@ -1089,6 +1090,82 @@ function confirmerValidationSoin(arbreId){
   afficherIndicateur(`✅ ${type} validé — ${a.nom}${!supprimer?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
 }
 
+function ouvrirGestionSoinsDepasses(event){
+  if(event) event.stopPropagation();
+  const today = new Date().toISOString().split('T')[0];
+  const limite = new Date(Date.now() - 30*86400000).toISOString().split('T')[0];
+  // Collecter tous les soins dépassés de plus de 30 jours
+  const soinsDepasses = [];
+  db.arbres.forEach(a=>{
+    const soins = getSoinsPlanifies(a);
+    soins.forEach(s=>{
+      if(s.date < limite){
+        soinsDepasses.push({arbre:a, soin:s});
+      }
+    });
+  });
+  if(!soinsDepasses.length){
+    afficherIndicateur('✅ Aucun soin dépassé de plus de 30 jours');
+    return;
+  }
+  const m = document.getElementById('modal-overlay');
+  const mc = document.getElementById('modal');
+  mc.innerHTML = `
+  <div class="modal-head">
+    <div class="modal-title">📅 Soins dépassés de plus de 30 jours (${soinsDepasses.length})</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <p style="font-size:13px;color:var(--stone);margin-bottom:14px">Ces soins sont planifiés depuis plus de 30 jours. Choisissez une action :</p>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="reporterSoinsDepasses('today')">📅 Reporter à aujourd'hui</button>
+      <button class="btn" onclick="reporterSoinsDepasses('next30')">📅 Reporter à +30 jours</button>
+      <button class="btn btn-danger" onclick="reporterSoinsDepasses('supprimer')">🗑️ Supprimer ces soins</button>
+    </div>
+    <div style="max-height:300px;overflow-y:auto">
+      ${soinsDepasses.slice(0,50).map(({arbre,soin})=>`
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span>${arbre.nom}</span>
+        <span style="color:var(--stone)">${soin.type}</span>
+        <span style="color:var(--rust)">${fmtDate(soin.date)}</span>
+      </div>`).join('')}
+      ${soinsDepasses.length>50?`<div style="text-align:center;padding:8px;color:var(--stone);font-size:12px">… et ${soinsDepasses.length-50} autres</div>`:''}
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="closeModal()">Annuler</button>
+  </div>`;
+  m.style.display='flex';
+}
+
+function reporterSoinsDepasses(action){
+  const today = new Date().toISOString().split('T')[0];
+  const next30 = new Date(Date.now()+30*86400000).toISOString().split('T')[0];
+  const limite = new Date(Date.now()-30*86400000).toISOString().split('T')[0];
+  let count = 0;
+  db.arbres.forEach(a=>{
+    if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
+    const avant = a.soins_planifies.length;
+    if(action==='supprimer'){
+      a.soins_planifies = a.soins_planifies.filter(s=>s.date >= limite);
+    } else {
+      const newDate = action==='today' ? today : next30;
+      a.soins_planifies = a.soins_planifies.map(s=>
+        s.date < limite ? {...s, date:newDate} : s
+      );
+    }
+    // Recalculer prochain_soin
+    const next = a.soins_planifies.slice().sort((x,y)=>x.date.localeCompare(y.date))[0];
+    a.prochain_soin = next?.date||'';
+    a.type_soin = next?.type||'';
+    count += Math.abs(a.soins_planifies.length - avant) || (avant>0?1:0);
+  });
+  closeModal(); render(); autoSave();
+  const msg = action==='supprimer' ? `🗑️ Soins dépassés supprimés` :
+    action==='today' ? `📅 Soins reportés à aujourd'hui` : `📅 Soins reportés à +30 jours`;
+  afficherIndicateur(msg);
+}
+
 function validerTousSoinsUrgents(event){
   if(event) event.stopPropagation();
   const today = new Date().toISOString().split('T')[0];
@@ -1278,6 +1355,7 @@ function renderCollection(c){
             ${urgents7.length?`<span style="color:var(--rust)">⚠️ ${urgents7.length} urgent${urgents7.length>1?'s':''}</span>`:''}
             ${urgents14.length?`<span>${urgents14.length} dans 14j</span>`:''}
             <button onclick="validerTousSoinsUrgents(event)" style="font-size:11px;padding:3px 10px;background:var(--moss);color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">✅ Tout valider</button>
+            <button onclick="ouvrirGestionSoinsDepasses(event)" style="font-size:11px;padding:3px 10px;background:#7c3aed;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">📅 Soins dépassés</button>
             <span id="soins-toggle-label">▼ voir</span>
           </span>
         </div>
@@ -5855,6 +5933,15 @@ function sauvegarderLocal(){
       arbres:arbresLeger
     });
     localStorage.setItem(STORAGE_KEY, payload);
+    // Garder les 5 dernières versions
+    const VERSIONS_KEY = 'yugen_bonsai_versions';
+    const MAX_VERSIONS = 5;
+    try{
+      const versions = JSON.parse(localStorage.getItem(VERSIONS_KEY)||'[]');
+      versions.unshift({savedAt:new Date().toISOString(), nbArbres:db.arbres.length, data:payload});
+      if(versions.length>MAX_VERSIONS) versions.length=MAX_VERSIONS;
+      localStorage.setItem(VERSIONS_KEY, JSON.stringify(versions));
+    }catch(_){}
     const ind = document.getElementById('save-indicator');
     if(ind){ ind.style.display='block'; ind.textContent='✓ '+new Date().toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'}); }
   } catch(e){
@@ -6129,6 +6216,49 @@ function afficherIndicateur(msg){
 }
 
 // Sauvegarde automatique après chaque modification
+function ouvrirVersions(){
+  const VERSIONS_KEY = 'yugen_bonsai_versions';
+  const versions = JSON.parse(localStorage.getItem(VERSIONS_KEY)||'[]');
+  const m = document.getElementById('modal-overlay');
+  const mc = document.getElementById('modal');
+  mc.innerHTML = `
+  <div class="modal-head">
+    <div class="modal-title">🕐 Sauvegardes automatiques</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    ${!versions.length ? '<div style="color:var(--stone);text-align:center;padding:20px">Aucune sauvegarde automatique disponible</div>' :
+    '<p style="font-size:13px;color:var(--stone);margin-bottom:12px">Les 5 dernières sauvegardes automatiques. Cliquez sur <strong>Restaurer</strong> pour revenir à cette version.</p>'
+    + versions.map((v,i)=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${i===0?'var(--moss-light)':'#f8f8f6'};border-radius:8px;margin-bottom:8px">
+      <div>
+        <div style="font-weight:600;font-size:13px">${i===0?'⭐ Plus récente — ':''}${new Date(v.savedAt).toLocaleString('fr-CH')}</div>
+        <div style="font-size:12px;color:var(--stone)">${v.nbArbres} arbres</div>
+      </div>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 12px" onclick="restaurerVersion(${i})">↩ Restaurer</button>
+    </div>`).join('')
+    }
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="closeModal()">Fermer</button>
+  </div>`;
+  m.style.display='flex';
+}
+
+async function restaurerVersion(idx){
+  const VERSIONS_KEY = 'yugen_bonsai_versions';
+  const versions = JSON.parse(localStorage.getItem(VERSIONS_KEY)||'[]');
+  const v = versions[idx];
+  if(!v) return;
+  const d = new Date(v.savedAt).toLocaleString('fr-CH');
+  if(!confirm(`Restaurer la version du ${d} (${v.nbArbres} arbres) ?
+
+La collection actuelle sera remplacée.`)) return;
+  localStorage.setItem('yugen_bonsai_collection', v.data);
+  closeModal();
+  location.reload();
+}
+
 function autoSave(){
   clearTimeout(window._autoSaveTimer);
   window._autoSaveTimer = setTimeout(sauvegarderLocal, 1500);
