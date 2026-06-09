@@ -352,6 +352,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
       <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
       <button class="btn-add" style="background:#475569;font-size:11px;padding:5px 10px" onclick="ouvrirVersions()" title="Restaurer une sauvegarde automatique">🕐 Versions</button>
       <button class="btn-add" style="background:#b45309;font-size:11px;padding:5px 10px" onclick="repairerPhotos()" title="Corriger l'orientation de toutes les photos (rotation EXIF)">🔃 Orienter photos</button>
+      <label class="btn-add" style="background:#1d4ed8;font-size:11px;padding:5px 10px;cursor:pointer" title="Réimporter des photos depuis des fichiers lots JSON">📥 Import photos<input type="file" accept=".json" multiple style="display:none" onchange="importerPhotosLots(this)"></label>
     </div>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
     <!-- Bouton menu mobile -->
@@ -5564,7 +5565,52 @@ async function compresserPhoto(dataUrl, maxPx=1400, qualite=0.82){
 
 // Retraite toutes les photos existantes (dans IDB + RAM) avec correction EXIF
 // À utiliser une seule fois pour réparer les photos déjà stockées
-async function repairerPhotos(){
+async // Importer les photos depuis des fichiers lots JSON (Export photos)
+async function importerPhotosLots(input){
+  const files = Array.from(input.files);
+  if(!files.length) return;
+  let total = 0, erreurs = 0;
+  afficherIndicateur('⏳ Import photos en cours…');
+  for(const file of files){
+    try{
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if(!data._lot || !Array.isArray(data.arbres)){
+        afficherIndicateur(`⚠️ ${file.name} n'est pas un fichier lot valide`);
+        continue;
+      }
+      for(const aLot of data.arbres){
+        const aLocal = db.arbres.find(a=>a.id===aLot.id);
+        if(!aLocal) continue;
+        for(const pLot of (aLot.photos||[])){
+          if(!pLot.dataUrl) continue;
+          // Trouver la photo correspondante dans l'arbre local
+          let pLocal = (aLocal.photos||[]).find(p=>p.id===pLot.id);
+          if(!pLocal){
+            // Ajouter la photo si elle n'existe pas
+            if(!aLocal.photos) aLocal.photos = [];
+            aLocal.photos.push({...pLot});
+            pLocal = aLocal.photos[aLocal.photos.length-1];
+          }
+          pLocal.dataUrl = pLot.dataUrl;
+          // Sauvegarder dans IndexedDB
+          await idbSauverPhoto(aLot.id, pLot.id, pLot.dataUrl);
+          total++;
+        }
+      }
+      afficherIndicateur(`⏳ ${file.name} — ${total} photos importées…`);
+    } catch(e){
+      console.error('Erreur import lot', file.name, e);
+      erreurs++;
+    }
+  }
+  input.value = '';
+  render();
+  autoSave();
+  afficherIndicateur(`✅ Import terminé — ${total} photos restaurées${erreurs?' · '+erreurs+' erreur(s)':''}`);
+}
+
+function repairerPhotos(){
   if(!confirm('Cette opération va retraiter toutes vos photos pour corriger la rotation.\n\nCela peut prendre quelques minutes selon le nombre de photos.\n\nContinuer ?')) return;
   afficherIndicateur('⏳ Réparation des photos en cours…');
   const toutes = await idbToutesPhotos();
