@@ -3687,7 +3687,7 @@ function previewImportFile(input){
   reader.readAsText(file,'utf-8');
 }
 
-function confirmImport(){
+async function confirmImport(){
   const tab=window._importActiveTab||'docm';
   let toImport=[];
   if(tab==='docm') toImport=(window._importDocmParsed||[]).filter(p=>!p._error);
@@ -5565,7 +5565,7 @@ async function compresserPhoto(dataUrl, maxPx=1400, qualite=0.82){
 
 // Retraite toutes les photos existantes (dans IDB + RAM) avec correction EXIF
 // À utiliser une seule fois pour réparer les photos déjà stockées
-async // Importer les photos depuis des fichiers lots JSON (Export photos)
+// Importer les photos depuis des fichiers lots JSON (Export photos)
 async function importerPhotosLots(input){
   const files = Array.from(input.files);
   if(!files.length) return;
@@ -5995,7 +5995,7 @@ function sauvegarderLocal(){
   }
 }
 
-function chargerJSON(input){
+async function chargerJSON(input){
   const files = [...(input.files||[])];
   if(!files.length) return;
   input.value='';
