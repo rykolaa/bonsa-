@@ -5610,7 +5610,7 @@ async function importerPhotosLots(input){
   afficherIndicateur(`✅ Import terminé — ${total} photos restaurées${erreurs?' · '+erreurs+' erreur(s)':''}`);
 }
 
-function repairerPhotos(){
+async function repairerPhotos(){
   if(!confirm('Cette opération va retraiter toutes vos photos pour corriger la rotation.\n\nCela peut prendre quelques minutes selon le nombre de photos.\n\nContinuer ?')) return;
   afficherIndicateur('⏳ Réparation des photos en cours…');
   const toutes = await idbToutesPhotos();
