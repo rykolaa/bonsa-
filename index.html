@@ -5726,7 +5726,7 @@ function ouvrirExportModal(){
 
 // Export par lots — génère N fichiers JSON de ~maxMB chacun avec photos compressées à 800px
 // Traite arbre par arbre pour éviter les out-of-memory
-async function exporterParLots(maxMB=50){
+async function exporterParLots(maxMB=30){
   closeModal();
   const maxBytes = maxMB * 1024 * 1024 * 1.33;
   const date = _dateStr();
@@ -5753,7 +5753,7 @@ async function exporterParLots(maxMB=50){
     afficherIndicateur(`⏳ Arbre ${i+1}/${nbArbres} — lot ${lotNum+1}…`);
     await new Promise(r=>setTimeout(r,5));
 
-    // Charger et compresser les photos de cet arbre seulement
+    // Charger la photo brute depuis IDB sans compression
     const photosOut = [];
     for(const p of (a.photos||[])){
       let dataUrl = null;
@@ -5765,7 +5765,7 @@ async function exporterParLots(maxMB=50){
           req.onsuccess = ()=>res(req.result);
           req.onerror = ()=>res(null);
         });
-        if(rec && rec.dataUrl) dataUrl = await compresserPhoto(rec.dataUrl, 800, 0.78);
+        if(rec && rec.dataUrl) dataUrl = rec.dataUrl;
       } catch(e){}
       photosOut.push({...p, dataUrl});
     }
