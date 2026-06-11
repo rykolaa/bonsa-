@@ -5725,39 +5725,9 @@ function ouvrirExportModal(){
 }
 
 // Export par lots — génère N fichiers JSON de ~maxMB chacun avec photos compressées à 800px
-async function exporterParLots(maxMB=100){
+// Traite arbre par arbre pour éviter les out-of-memory
+async function exporterParLots(maxMB=50){
   closeModal();
-
-  // Charger toutes les photos IDB
-  afficherIndicateur('⏳ Chargement des photos depuis IndexedDB…');
-  await new Promise(r=>setTimeout(r,50));
-  let idbMap = {};
-  try{
-    const toutes = await idbToutesPhotos();
-    toutes.forEach(r=>{ idbMap[r.key]=r.dataUrl; });
-  } catch(e){}
-
-  const nbPhotosTotal = Object.keys(idbMap).length;
-  afficherIndicateur(`⏳ Compression de ${nbPhotosTotal} photos à 800px…`);
-  await new Promise(r=>setTimeout(r,50));
-
-  // Compresser toutes les photos à 800px max
-  const idbMapCompressed = {};
-  let compIdx = 0;
-  for(const [key, dataUrl] of Object.entries(idbMap)){
-    if(dataUrl){
-      idbMapCompressed[key] = await compresserPhoto(dataUrl, 800, 0.78);
-    }
-    compIdx++;
-    if(compIdx % 5 === 0){
-      afficherIndicateur(`⏳ Compression ${compIdx}/${nbPhotosTotal} photos…`);
-      await new Promise(r=>setTimeout(r,10));
-    }
-  }
-
-  afficherIndicateur('⏳ Préparation des lots…');
-  await new Promise(r=>setTimeout(r,50));
-
   const maxBytes = maxMB * 1024 * 1024 * 1.33;
   const date = _dateStr();
 
@@ -5770,41 +5740,69 @@ async function exporterParLots(maxMB=100){
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
     especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
   };
+  const headerBytes = JSON.stringify(headerBase).length;
 
-  // Pré-calculer les lots avec photos compressées
-  const lots = [];
+  let lotNum = 0;
+  let lotsTelechargés = [];
   let lotCourant = [];
-  let bytesCourant = JSON.stringify(headerBase).length;
+  let bytesCourant = headerBytes;
+  const nbArbres = db.arbres.length;
 
-  for(let i=0; i<db.arbres.length; i++){
+  for(let i=0; i<nbArbres; i++){
     const a = db.arbres[i];
-    const aOut = {...a, photos:(a.photos||[]).map(p=>({
-      ...p, dataUrl: idbMapCompressed[_photoKey(a.id,p.id)] || idbMap[_photoKey(a.id,p.id)] || p.dataUrl || null
-    }))};
+    afficherIndicateur(`⏳ Arbre ${i+1}/${nbArbres} — lot ${lotNum+1}…`);
+    await new Promise(r=>setTimeout(r,5));
+
+    // Charger et compresser les photos de cet arbre seulement
+    const photosOut = [];
+    for(const p of (a.photos||[])){
+      let dataUrl = null;
+      try{
+        const idbInst = await ouvrirIDB();
+        const rec = await new Promise((res)=>{
+          const tx = idbInst.transaction(IDB_STORE,'readonly');
+          const req = tx.objectStore(IDB_STORE).get(_photoKey(a.id,p.id));
+          req.onsuccess = ()=>res(req.result);
+          req.onerror = ()=>res(null);
+        });
+        if(rec && rec.dataUrl) dataUrl = await compresserPhoto(rec.dataUrl, 800, 0.78);
+      } catch(e){}
+      photosOut.push({...p, dataUrl});
+    }
+
+    const aOut = {...a, photos:photosOut};
     const aStr = JSON.stringify(aOut);
+
+    // Si cet arbre fait dépasser la limite, on télécharge le lot courant d'abord
     if(bytesCourant + aStr.length > maxBytes && lotCourant.length > 0){
-      lots.push(lotCourant);
+      lotsTelechargés.push(lotCourant);
+      lotNum++;
+      // Télécharger immédiatement (nombre de lots final inconnu, on met 999 provisoirement)
+      const payload = JSON.stringify({...headerBase, _lotNum:lotNum, _lotTotal:999, arbres:lotCourant});
+      const blob = new Blob([payload], {type:'application/json'});
+      _telechargerBlob(blob, `Yugen_Bonsai_lot${String(lotNum).padStart(2,'0')}_${date}.json`);
+      afficherIndicateur(`⬇️ Lot ${lotNum} téléchargé (${Math.round(blob.size/1024/1024*10)/10} MB)…`);
+      await new Promise(r=>setTimeout(r,500));
       lotCourant = [aOut];
-      bytesCourant = JSON.stringify(headerBase).length + aStr.length;
+      bytesCourant = headerBytes + aStr.length;
     } else {
       lotCourant.push(aOut);
       bytesCourant += aStr.length;
     }
-    afficherIndicateur(`⏳ Lot ${lots.length+1} — arbre ${i+1}/${db.arbres.length}…`);
   }
-  if(lotCourant.length) lots.push(lotCourant);
 
-  const nbLots = lots.length;
-  for(let i=0; i<lots.length; i++){
-    await new Promise(r=>setTimeout(r, 300));
-    const payload = JSON.stringify({...headerBase, _lotNum:i+1, _lotTotal:nbLots, arbres:lots[i]});
+  // Dernier lot
+  if(lotCourant.length > 0){
+    lotNum++;
+    lotsTelechargés.push(lotCourant);
+    const payload = JSON.stringify({...headerBase, _lotNum:lotNum, _lotTotal:lotNum, arbres:lotCourant});
     const blob = new Blob([payload], {type:'application/json'});
-    _telechargerBlob(blob, `Yugen_Bonsai_lot${String(i+1).padStart(2,'0')}de${nbLots}_${date}.json`);
-    afficherIndicateur(`⬇️ Téléchargement lot ${i+1}/${nbLots} (${Math.round(blob.size/1024/1024*10)/10} MB)…`);
+    _telechargerBlob(blob, `Yugen_Bonsai_lot${String(lotNum).padStart(2,'0')}_${date}.json`);
+    afficherIndicateur(`⬇️ Lot ${lotNum} téléchargé (${Math.round(blob.size/1024/1024*10)/10} MB)…`);
   }
 
   sauvegarderLocal();
-  afficherIndicateur(`✅ Export terminé — ${nbLots} lot${nbLots>1?'s':''} · ${db.arbres.length} arbres · photos compressées à 800px`);
+  afficherIndicateur(`✅ Export terminé — ${lotNum} lot${lotNum>1?'s':''} · ${nbArbres} arbres`);
 }
 // Les photos sont déjà persistées dans IndexedDB du navigateur.
 // Ce fichier JSON suffit pour tout restaurer (les photos se rechargent depuis IDB).
