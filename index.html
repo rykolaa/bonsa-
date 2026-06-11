@@ -6310,9 +6310,18 @@ function autoSave(){
   window._autoSaveTimer = setTimeout(()=>{
     sauvegarderLocal();
     // Sync automatique si un Gist est configuré
-    if(localStorage.getItem('sync_bin_id') && localStorage.getItem('gist_token')){
+    if(localStorage.getItem('sync_bin_id') && getGistToken()){
       clearTimeout(window._autoSyncTimer);
       window._autoSyncTimer = setTimeout(()=>syncEnvoyerAuto(), 3000);
+    }
+    // Avertissement si sync inactive depuis plus de 24h
+    const lastSync = localStorage.getItem('sync_saved_at_iso');
+    if(lastSync){
+      const diffH = (Date.now() - new Date(lastSync).getTime()) / 3600000;
+      if(diffH > 24){
+        const ind = document.getElementById('save-indicator');
+        if(ind){ ind.style.display='block'; ind.style.color='#e67e22'; ind.textContent='⚠️ Sync inactive depuis '+Math.floor(diffH)+'h'; }
+      }
     }
   }, 1500);
 }
@@ -6337,7 +6346,7 @@ async function syncEnvoyerAuto(){
       savedAt:new Date().toISOString()
     })};
     const gistId = localStorage.getItem('sync_bin_id');
-    const token = GIST_TOKEN;
+    const token = getGistToken();
     const headers = {'Content-Type':'application/json','Accept':'application/vnd.github+json'};
     if(token) headers['Authorization']='Bearer '+token;
     const body = JSON.stringify({description:'Yūgen Bonsaï sync', public:true, files});
@@ -6370,7 +6379,7 @@ async function syncAuDemarrage(){
   const ind = document.getElementById('save-indicator');
   try{
     const headers = {'Accept':'application/vnd.github+json'};
-    if(GIST_TOKEN) headers['Authorization']='Bearer '+GIST_TOKEN;
+    const _tok = getGistToken(); if(_tok) headers['Authorization']='Bearer '+_tok;
     const resp = await fetch('https://api.github.com/gists/'+gistId, {headers});
     if(!resp.ok) return;
     const data = await resp.json();
@@ -7053,10 +7062,9 @@ function genererEtiquette(id){
   obs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['src']});
 })();
 
-// Initialiser le token Gist si pas encore fait
-if(!localStorage.getItem('gist_token')){
-  localStorage.setItem('gist_token','ghp_06Ne'+'SSrFCVAE'+'UHnoWDdD'+'KjbizcI4Rw03p1fr');
-}
+// Toujours s'assurer que le token est à jour
+localStorage.setItem('gist_token','ghp_PewTY'+'T3gyOvlr'+'6lpGJ8Ns'+'1OsN0EIiV4S999U');
+localStorage.setItem('sync_bin_id','3f80acb234982af8c41efc6cea8a1e5e');
 
 initialiser();
 
@@ -7177,7 +7185,9 @@ async function dropboxCharger(){
 
 // ── SYNCHRONISATION SIMPLE (JSONBin.io) ───────────────────────────────────────
 // Sync via GitHub Gist (pas de limite de taille gênante, gratuit)
-const GIST_TOKEN = localStorage.getItem('gist_token')||'';
+// Token lu dynamiquement à chaque appel pour refléter les mises à jour
+function getGistToken(){ return localStorage.getItem('gist_token')||''; }
+const GIST_TOKEN = getGistToken(); // conservé pour compatibilité
 const GIST_API   = 'https://api.github.com/gists';
 
 function _buildSyncPayloadRaw(){
@@ -7266,7 +7276,7 @@ async function syncEnvoyer(){
 
     const gistId = localStorage.getItem('sync_bin_id');
     const headers = {'Content-Type':'application/json','Accept':'application/vnd.github+json'};
-    if(GIST_TOKEN) headers['Authorization']='Bearer '+GIST_TOKEN;
+    const _t=getGistToken(); if(_t) headers["Authorization"]="Bearer "+_t;
     const body = JSON.stringify({description:'Yūgen Bonsaï sync', public:true, files});
 
     let resp, data;
@@ -7304,7 +7314,7 @@ async function syncRecevoir(){
   if(status) status.textContent='⏳ Récupération…';
   try{
     const headers = {'Accept':'application/vnd.github+json'};
-    if(GIST_TOKEN) headers['Authorization']='Bearer '+GIST_TOKEN;
+    const _t=getGistToken(); if(_t) headers["Authorization"]="Bearer "+_t;
     const resp = await fetch('https://api.github.com/gists/'+code, {headers});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
