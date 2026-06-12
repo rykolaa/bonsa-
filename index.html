@@ -6701,7 +6701,7 @@ function imprimerEtiquettesSelection(){
 
   const etiquettesHTML = arbres.map(a=>{
     const url = `${location.origin}${location.pathname}?arbre=${a.id}`;
-    const nomLatin = getNomLatin(a.espece, a) || '';
+    const nomLatin = a.nom_latin || '';
     const dateAcq = a.date_acq ? new Date(a.date_acq).toLocaleDateString('fr-CH',{year:'numeric',month:'long',day:'numeric'}) : '—';
     const origine = a.origine || '—';
     return `<div class="etiquette">
@@ -6938,7 +6938,7 @@ function genererEtiquette(id){
   if(!a) return;
 
   const url = `${location.origin}${location.pathname}?arbre=${a.id}`;
-  const nomLatin = getNomLatin(a.espece, a) || '';
+  const nomLatin = a.nom_latin || '';
   const dateAcq = a.date_acq ? new Date(a.date_acq).toLocaleDateString('fr-CH',{year:'numeric',month:'long',day:'numeric'}) : '—';
   const origine = a.origine || '—';
 
