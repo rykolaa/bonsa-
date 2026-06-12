@@ -2730,7 +2730,7 @@ function showArbreModal(a){
     </div>
     <div class="form-section">Provenance & acquisition</div>
     <div class="form-row">
-      <div class="fg"><label>Origine</label><select id="f-ori">${ORIGINES.map(o=>`<option ${isEdit&&a.origine===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="fg"><label>Origine</label><select id="f-ori" onchange="majChampsOrigine(this.value)">${ORIGINES.map(o=>`<option ${isEdit&&a.origine===o?'selected':''}>${o}</option>`).join('')}</select></div>
       <div class="fg"><label>Date d'acquisition</label><input id="f-date" type="date" value="${isEdit?a.date_acq||'':''}"></div>
     </div>
     <div class="form-row">
@@ -2743,6 +2743,15 @@ function showArbreModal(a){
     </div>
     <div class="form-row">
       <div class="fg"><label>Donnateur</label><input id="f-don" value="${isEdit?a.donnateur||'':''}" placeholder="Si origine Don"></div>
+    </div>
+    <div id="f-semis-row" class="form-row" style="display:${isEdit&&a.origine==='Semis'?'flex':'none'}">
+      <div class="fg"><label>Provenance des semis</label><input id="f-semis-source" value="${isEdit?a.semis_source||'':''}" placeholder="Fournisseur, lieu de collecte…"></div>
+    </div>
+    <div id="f-bouture-row" class="form-row" style="display:${isEdit&&a.origine==='Bouture'?'flex':'none'}">
+      <div class="fg"><label>Provenance de la bouture</label><input id="f-bouture-source" value="${isEdit?a.bouture_source||'':''}" placeholder="Plante mère, fournisseur…"></div>
+    </div>
+    <div id="f-marcotte-row" class="form-row" style="display:${isEdit&&a.origine==='Marcotte'?'flex':'none'}">
+      <div class="fg"><label>Arbre d'origine (marcotte)</label><input id="f-marcotte-source" value="${isEdit?a.marcotte_source||'':''}" placeholder="Numéro collection, collectionneur, arbre sauvage…"></div>
     </div>
     <div class="form-section">Santé & soins</div>
     <div class="form-row">
@@ -2874,6 +2883,9 @@ function saveArbre(id){
     alt:document.getElementById('f-alt').value,
     gps:document.getElementById('f-gps').value,
     donnateur:document.getElementById('f-don').value,
+    semis_source:document.getElementById('f-semis-source')?.value||'',
+    bouture_source:document.getElementById('f-bouture-source')?.value||'',
+    marcotte_source:document.getElementById('f-marcotte-source')?.value||'',
     sante:parseInt(document.getElementById('f-sante').value)||85,
     type_soin: (()=>{ try{ const s=JSON.parse(document.getElementById('f-soins-json')?.value||'[]'); return s[0]?.type||''; }catch(e){return '';} })(),
     prochain_soin: (()=>{ try{ const s=JSON.parse(document.getElementById('f-soins-json')?.value||'[]').sort((a,b)=>a.date.localeCompare(b.date)); return s[0]?.date||''; }catch(e){return '';} })(),
@@ -3798,6 +3810,12 @@ function _doImport(toImport){
 function closeModal(){document.getElementById('modal-overlay').style.display='none';}
 
 function setPage(p){state.page=p;render();syncMobileTabs();}
+function majChampsOrigine(origine){
+  document.getElementById('f-semis-row').style.display = origine==='Semis' ? 'flex' : 'none';
+  document.getElementById('f-bouture-row').style.display = origine==='Bouture' ? 'flex' : 'none';
+  document.getElementById('f-marcotte-row').style.display = origine==='Marcotte' ? 'flex' : 'none';
+}
+
 function toggleMobileMenu(){
   const d=document.getElementById('mobile-dropdown');
   d.classList.toggle('open');
