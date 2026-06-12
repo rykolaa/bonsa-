@@ -6385,7 +6385,7 @@ async function syncAuDemarrage(){
     if(!idxContent) return;
     const idx = JSON.parse(idxContent);
     const gistDate = new Date(idx.savedAt);
-    const localDate = new Date(localStorage.getItem('sync_saved_at_iso')||0);
+    const localRaw = JSON.parse(localStorage.getItem("yugen_bonsai_collection")||"{}"); const localDate = new Date(localRaw.savedAt || localStorage.getItem("sync_saved_at_iso") || 0);
     if(gistDate - localDate > 30000){
       if(ind){ ind.style.display='block'; ind.textContent='🔄 Mise à jour…'; }
       const chunks = idx.chunks || 1;
@@ -7060,10 +7060,9 @@ function genererEtiquette(id){
   obs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['src']});
 })();
 
-// Toujours s'assurer que le token est à jour
+// Mettre à jour le token seulement, ne pas écraser sync_bin_id
 localStorage.setItem('gist_token','ghp_PewTY'+'T3gyOvlr'+'6lpGJ8Ns'+'1OsN0EIiV4S999U');
-localStorage.setItem('sync_bin_id','3f80acb234982af8c41efc6cea8a1e5e');
-
+if(!localStorage.getItem('sync_bin_id')) localStorage.setItem('sync_bin_id','3f80acb234982af8c41efc6cea8a1e5e');
 initialiser();
 
 // ── SYNCHRONISATION DROPBOX ───────────────────────────────────────────────────
