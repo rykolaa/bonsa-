@@ -2942,7 +2942,7 @@ function openTravailModal(arbreId, travailIdx){
     ${!singleArbre?`<div class="fg" style="margin-bottom:12px"><label>Arbre concerné *</label><select id="f-tarbre" onchange="updateTravailPhotos()">${db.arbres.map(x=>`<option value="${x.id}">${getEmoji(x.espece)} ${x.nom}</option>`).join('')}</select></div>`:'<input type="hidden" id="f-tarbre" value="'+arbreId+'">'}
     <div class="form-row">
       <div class="fg"><label>Type de travail *</label>
-        <select id="f-ttype" onchange="toggleRempotageFields()">
+        <select id="f-ttype" onchange="toggleRempotageFields();majCoutTravail()">
           ${TRAVAUX_TYPES.map(t=>`<option ${typeVal===t?'selected':''}>${TRAVAUX_ICONS[t]||'📝'} ${t}</option>`).join('')}
         </select>
       </div>
@@ -3019,6 +3019,7 @@ function openTravailModal(arbreId, travailIdx){
   document.getElementById('modal-overlay').style.display='flex';
   updateTravailPhotos();
   toggleRempotageFields();
+  if(!isEdit) majCoutTravail();
 }
 
 function toggleRempotageFields(){
@@ -3810,6 +3811,51 @@ function _doImport(toImport){
 function closeModal(){document.getElementById('modal-overlay').style.display='none';}
 
 function setPage(p){state.page=p;render();syncMobileTabs();}
+function majCoutTravail(){
+  const typeSel = document.getElementById('f-ttype');
+  const coutField = document.getElementById('f-tcout');
+  const arbreIdField = document.getElementById('f-tarbre');
+  if(!typeSel || !coutField) return;
+
+  // Ne pas écraser un coût déjà saisi manuellement (> 0)
+  if(parseFloat(coutField.value) > 0) return;
+
+  // Extraire le nom du type (sans l'emoji)
+  const typeLabel = typeSel.value.replace(/^[\p{Emoji}\s]+/u,'').trim();
+
+  // Trouver le type dans travaux_types de la DB
+  const tt = (db.travaux_types||[]).find(t=>t.nom===typeLabel);
+  if(!tt) return;
+
+  // Trouver la taille de l'arbre
+  const arbreId = parseInt(arbreIdField?.value);
+  const a = arbreId ? db.arbres.find(x=>x.id===arbreId) : null;
+  if(!a) return;
+
+  const tailleCat = getTailleCategorie(a);
+
+  // Appliquer le coût selon la taille si disponible
+  if(tt.couts_taille && tailleCat && tt.couts_taille[tailleCat] !== undefined){
+    coutField.value = tt.couts_taille[tailleCat];
+  } else if(tt.cout > 0){
+    coutField.value = tt.cout;
+  }
+}
+
+function getTailleCategorie(a){
+  if(!a) return null;
+  const h = a.hauteur || 0;
+  if(h === 0) return null;
+  if(h <= 7.5)  return 'Keishitsuo';
+  if(h <= 15)   return 'Shito';
+  if(h <= 20)   return 'Mame';
+  if(h <= 30)   return 'Shohin';
+  if(h <= 45)   return 'Komono';
+  if(h <= 75)   return 'Chūmono';
+  if(h <= 120)  return 'Dai & Omono';
+  return 'Hachi-uye';
+}
+
 function majChampsOrigine(origine){
   document.getElementById('f-semis-row').style.display = origine==='Semis' ? 'flex' : 'none';
   document.getElementById('f-bouture-row').style.display = origine==='Bouture' ? 'flex' : 'none';
@@ -6733,22 +6779,22 @@ function imprimerEtiquettesSelection(){
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f0f0f0;padding:20px;display:flex;flex-direction:column;align-items:center;gap:16px}
-  .page-a4{width:210mm;min-height:297mm;background:#fff;padding:10mm;display:grid;grid-template-columns:1fr 1fr;gap:5mm;align-content:start;box-shadow:0 2px 12px rgba(0,0,0,.15)}
-  .etiquette{width:85.6mm;height:54mm;background:#fff;border:1px solid #ccc;border-radius:4px;display:flex;overflow:hidden}
-  .et-left{flex:1;padding:6mm 4mm 6mm 6mm;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid #e8e8e8;min-width:0}
-  .et-nom{font-size:13pt;font-weight:700;color:#1a1a18;line-height:1.2;margin-bottom:1.5mm}
-  .et-latin{font-size:7.5pt;color:#6b6b5e;font-style:italic;margin-bottom:2.5mm}
-  .et-infos{display:flex;flex-direction:column;gap:1.2mm}
+  .page-a4{width:210mm;min-height:297mm;background:#fff;padding:8mm 10mm;display:grid;grid-template-columns:1fr 1fr;gap:4mm;align-content:start;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+  .etiquette{width:85.6mm;height:50mm;background:#fff;border:1px solid #ccc;border-radius:4px;display:flex;overflow:hidden}
+  .et-left{flex:1;padding:5mm 4mm 5mm 6mm;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid #e8e8e8;min-width:0}
+  .et-nom{font-size:12pt;font-weight:700;color:#1a1a18;line-height:1.2;margin-bottom:1mm}
+  .et-latin{font-size:7pt;color:#6b6b5e;font-style:italic;margin-bottom:2mm}
+  .et-infos{display:flex;flex-direction:column;gap:1mm}
   .et-ligne{font-size:7pt;color:#444;display:flex;gap:2mm}
   .et-key{color:#888;min-width:13mm;font-size:6.5pt;text-transform:uppercase;letter-spacing:.03em;padding-top:.5mm}
   .et-val{color:#222;font-weight:500;flex:1;font-size:7pt}
-  .et-right{width:22mm;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4mm;background:#fafafa;gap:1.5mm}
+  .et-right{width:22mm;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3mm;background:#fafafa;gap:1.5mm}
   .qrcode img,.qrcode canvas{width:16mm!important;height:16mm!important}
   .et-scan{font-size:5.5pt;color:#999;text-align:center;line-height:1.3}
-  .et-emoji{font-size:18pt}
+  .et-emoji{font-size:16pt}
   .btn-print{background:#2d5a27;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:14px;cursor:pointer}
   .btn-print:hover{background:#1e3e1b}
-  @media print{body{background:#fff;padding:0}.btn-print{display:none}.page-a4{box-shadow:none;padding:8mm}}
+  @media print{body{background:#fff;padding:0}.btn-print{display:none}.page-a4{box-shadow:none;padding:8mm 10mm}}
 </style>
 </head><body>
 <button class="btn-print" onclick="window.print()">🖨️ Imprimer (${arbres.length} étiquette${arbres.length>1?'s':''})</button>
