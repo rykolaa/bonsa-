@@ -3820,11 +3820,11 @@ function majCoutTravail(){
   // Ne pas écraser un coût déjà saisi manuellement (> 0)
   if(parseFloat(coutField.value) > 0) return;
 
-  // Extraire le nom du type (sans l'emoji)
-  const typeLabel = typeSel.value.replace(/^[\p{Emoji}\s]+/u,'').trim();
-
-  // Trouver le type dans travaux_types de la DB
-  const tt = (db.travaux_types||[]).find(t=>t.nom===typeLabel);
+  // Extraire le nom du type — la valeur du select contient "emoji nom"
+  // On cherche le type dont le nom correspond à la fin de la valeur sélectionnée
+  const typeRaw = typeSel.value;
+  const allTypes = getTravaux();
+  const tt = allTypes.find(t => typeRaw.includes(t.nom));
   if(!tt) return;
 
   // Trouver la taille de l'arbre
@@ -3835,7 +3835,7 @@ function majCoutTravail(){
   const tailleCat = getTailleCategorie(a);
 
   // Appliquer le coût selon la taille si disponible
-  if(tt.couts_taille && tailleCat && tt.couts_taille[tailleCat] !== undefined){
+  if(tt.couts_taille && tailleCat && tt.couts_taille[tailleCat] !== undefined && tt.couts_taille[tailleCat] > 0){
     coutField.value = tt.couts_taille[tailleCat];
   } else if(tt.cout > 0){
     coutField.value = tt.cout;
@@ -4148,6 +4148,7 @@ function renderPots(c){
       <div class="pot-card-img">
         ${cover?`<img src="${cover.dataUrl}" alt="${p.nom}">`:`<span style="font-size:44px">⬛</span>`}
         <div style="position:absolute;top:8px;right:8px"><span class="pot-status-badge ${p.statut==='libre'?'pot-libre':'pot-utilise'}">${p.statut==='libre'?'Disponible':'En service'}</span></div>
+        <div style="position:absolute;bottom:6px;right:6px"><button class="btn" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,.9)" onclick="event.stopPropagation();dupliquerPot(${p.id})" title="Dupliquer ce pot">⧉ Dupliquer</button></div>
       </div>
       <div class="pot-card-body">
         <div class="pot-card-nom">${p.nom}</div>
@@ -5184,6 +5185,22 @@ function ouvrirVideo(src,nom){
 }
 
 // ── MODAL POT ──────────────────────────────────────────────────────────────────
+function dupliquerPot(id){
+  const p = db.pots.find(x=>x.id===id);
+  if(!p) return;
+  const newPot = {...p,
+    id: db.nextPotId++,
+    nom: p.nom + ' (copie)',
+    statut: 'libre',
+    arbre_id: null,
+    photos: []
+  };
+  db.pots.push(newPot);
+  autoSave();
+  renderAtelier(document.getElementById('atelier-content'));
+  afficherIndicateur(`✅ Pot "${p.nom}" dupliqué`);
+}
+
 function openPotModal(id, fromRemp=false){
   const p = id ? db.pots.find(x=>x.id===id) : null;
   const isEdit = !!p;
