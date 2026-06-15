@@ -5203,7 +5203,7 @@ function dupliquerPot(id){
   };
   db.pots.push(newPot);
   autoSave();
-  renderAtelier(document.getElementById('atelier-content'));
+  renderAtelier(document.getElementById('content'));
   afficherIndicateur(`✅ Pot "${p.nom}" dupliqué`);
 }
 
