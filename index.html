@@ -5246,9 +5246,7 @@ function openPotModal(id, fromRemp=false){
     </div>
     <div class="form-row one"><div class="fg"><label>Notes</label><textarea id="p-notes" rows="2">${isEdit?p.notes||'':''}</textarea></div></div>
     <div class="form-section">Photos du pot</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="p-photos-prev">
-      ${isEdit?(p.photos||[]).map(ph=>ph.dataUrl?`<img src="${ph.dataUrl}" style="width:70px;height:62px;object-fit:contain;background:#f7f4ee;border-radius:6px;border:1px solid var(--border)">`:'').join(''):''}
-    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="p-photos-prev"></div>
     <label class="btn" style="cursor:pointer;font-size:12px;width:fit-content">📷 Ajouter des photos<input type="file" accept="image/*" multiple style="display:none" onchange="ajouterPhotosPot(this)"></label>
   </div>
   <div class="modal-footer">
@@ -5258,6 +5256,22 @@ function openPotModal(id, fromRemp=false){
   </div>`;
   window._potPhotosTmp = isEdit?[...(p.photos||[])]:[];
   document.getElementById('modal-overlay').style.display='flex';
+  _renderPotPhotos();
+
+function _renderPotPhotos(){
+  const prev = document.getElementById('p-photos-prev');
+  if(!prev) return;
+  prev.innerHTML = window._potPhotosTmp.map((ph,i) => ph.dataUrl ?
+    `<div style="position:relative;display:inline-block">
+      <img src="${ph.dataUrl}" style="width:70px;height:62px;object-fit:contain;background:#f7f4ee;border-radius:6px;border:1px solid var(--border)">
+      <button onclick="supprimerPhotoPot(${i})" style="position:absolute;top:-6px;right:-6px;background:#e53;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:12px;cursor:pointer;line-height:1;padding:0">✕</button>
+    </div>`
+  : '').join('');
+}
+
+function supprimerPhotoPot(idx){
+  window._potPhotosTmp.splice(idx, 1);
+  _renderPotPhotos();
 }
 
 function ajouterPhotosPot(input){
@@ -5265,8 +5279,7 @@ function ajouterPhotosPot(input){
     const reader=new FileReader();
     reader.onload=e=>{
       window._potPhotosTmp.push({id:'pp_'+Date.now()+Math.random(),dataUrl:e.target.result,nom:file.name});
-      const prev=document.getElementById('p-photos-prev');
-      if(prev) prev.innerHTML=window._potPhotosTmp.map(ph=>ph.dataUrl?`<img src="${ph.dataUrl}" style="width:70px;height:62px;object-fit:contain;background:#f7f4ee;border-radius:6px;border:1px solid var(--border)">`:'').join('');
+      _renderPotPhotos();
     };
     reader.readAsDataURL(file);
   });
