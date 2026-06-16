@@ -5257,6 +5257,7 @@ function openPotModal(id, fromRemp=false){
   window._potPhotosTmp = isEdit?[...(p.photos||[])]:[];
   document.getElementById('modal-overlay').style.display='flex';
   _renderPotPhotos();
+}
 
 function _renderPotPhotos(){
   const prev = document.getElementById('p-photos-prev');
