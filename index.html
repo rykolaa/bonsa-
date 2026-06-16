@@ -2423,10 +2423,13 @@ function openDetail(id){
     <!-- COLONNE GAUCHE : photos -->
     <div class="dp-photo-col">
       <div class="dp-photo-main" onclick="openDetailLightbox(${a.id},0)" style="position:relative">
-        ${coverPhoto
+        ${coverPhoto && coverPhoto.dataUrl
           ? `<img src="${coverPhoto.dataUrl}" alt="${esc(a.nom)}" id="dp-cover-img">
              <button class="dp-cover-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${coverPhoto.id}')">🗑 Supprimer</button>`
-          : `<div class="dp-photo-emoji">${getEmoji(a.espece)}</div>`}
+          : coverPhoto
+            ? `<div class="dp-photo-emoji">${getEmoji(a.espece)}</div>
+               <button class="dp-cover-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${coverPhoto.id}')">🗑 Supprimer</button>`
+            : `<div class="dp-photo-emoji">${getEmoji(a.espece)}</div>`}
       </div>
       ${photos.length > 1 ? `
       <div class="dp-photo-strip-vert">
@@ -2437,7 +2440,10 @@ function openDetail(id){
                <button class="dp-strip-star" onclick="event.stopPropagation();setCoverPhoto(${a.id},'${p.id}')" title="Définir comme photo principale">${p.id===a.cover_photo_id?'⭐':'☆'}</button>
                <button class="dp-strip-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${p.id}')" title="Supprimer cette photo">✕</button>
              </div>`
-          : `<div class="dp-strip-thumb" style="background:var(--moss-light);display:flex;align-items:center;justify-content:center;font-size:22px">${getEmoji(a.espece)}</div>`
+          : `<div class="dp-strip-thumb-wrap">
+               <div class="dp-strip-thumb" style="background:var(--moss-light);display:flex;align-items:center;justify-content:center;font-size:22px" title="Photo sans image (référence orpheline)">${getEmoji(a.espece)}</div>
+               <button class="dp-strip-del" onclick="event.stopPropagation();deletePhotoDetail(${a.id},'${p.id}')" title="Supprimer cette référence photo">✕</button>
+             </div>`
         ).join('')}
         <div class="dp-strip-add" onclick="openPhotoModal(${a.id})" title="Ajouter une photo">＋</div>
       </div>` : `
