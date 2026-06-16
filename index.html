@@ -6130,9 +6130,9 @@ async function chargerJSON(input){
         _hideLoading();
         if(!confirm('Vous avez '+nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\n— OK : Remplacer\n— Annuler : Fusionner')){
           _showLoading('Fusion en cours...');
-          await _fusionnerCollection(collection);
+          const { nbPotsAjoutes } = await _fusionnerCollection(collection);
           render(); _hideLoading();
-          afficherIndicateur('Fusion — '+db.arbres.length+' arbres');
+          afficherIndicateur('Fusion — '+db.arbres.length+' arbres · '+nbPotsAjoutes+' pot'+(nbPotsAjoutes!==1?'s':'')+' ajouté'+(nbPotsAjoutes!==1?'s':''));
           return;
         }
         _showLoading('Chargement en cours...');
@@ -6341,12 +6341,31 @@ async function _fusionnerArbres(arbres){
   sauvegarderLocal();
 }
 
+// Fusionne uniquement les pots (dédoublonnage par id, réattribution si collision)
+function _fusionnerPots(pots){
+  let nbAjoutes = 0;
+  for(const p of pots){
+    const dejaPresent = db.pots.find(x=>x.id===p.id && x.nom===p.nom);
+    if(dejaPresent) continue; // déjà présent (même id et même nom)
+    const idEnConflit = db.pots.find(x=>x.id===p.id);
+    const potAFusionner = idEnConflit ? {...p, id: db.nextPotId++} : p;
+    if(!idEnConflit) db.nextPotId = Math.max(db.nextPotId, p.id+1);
+    db.pots.push(potAFusionner);
+    nbAjoutes++;
+  }
+  return nbAjoutes;
+}
+
 // Fusionne toute une collection (pour le mode fusion)
 async function _fusionnerCollection(collection){
   await _fusionnerArbres(collection.arbres||[]);
   // Mettre à jour nextId si nécessaire
   const maxId = Math.max(db.nextId, ...(collection.arbres||[]).map(a=>a.id||0))+1;
   db.nextId = maxId;
+  // Fusionner les pots (absents de l'ancienne logique de fusion)
+  const nbPotsAjoutes = _fusionnerPots(collection.pots||[]);
+  if(nbPotsAjoutes>0) sauvegarderLocal();
+  return { nbPotsAjoutes };
 }
 
 function afficherIndicateur(msg){
