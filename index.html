@@ -6154,6 +6154,7 @@ async function chargerJSON(input){
         if(!confirm('Vous avez '+nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\n— OK : Remplacer\n— Annuler : Fusionner')){
           _showLoading('Fusion en cours...');
           const { nbPotsAjoutes } = await _fusionnerCollection(collection);
+          window._chargementManuelRecent = Date.now();
           render(); _hideLoading();
           afficherIndicateur('Fusion — '+db.arbres.length+' arbres · '+nbPotsAjoutes+' pot'+(nbPotsAjoutes!==1?'s':'')+' ajouté'+(nbPotsAjoutes!==1?'s':''));
           return;
@@ -6163,6 +6164,7 @@ async function chargerJSON(input){
       _showLoading('Transfert photos vers IndexedDB...');
       await new Promise(r=>setTimeout(r,50));
       await _chargerCollection(collection);
+      window._chargementManuelRecent = Date.now();
       render(); _hideLoading();
       const nbP = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
       afficherIndicateur('✅ '+db.arbres.length+' arbres · '+nbP+' photos chargés');
@@ -6205,6 +6207,7 @@ async function chargerLots(files){
         const data = JSON.parse(text);
         await _fusionnerCollection(data.db||data);
       }
+      window._chargementManuelRecent = Date.now();
       render(); _hideLoading();
       afficherIndicateur('✅ Fusion — '+db.arbres.length+' arbres');
       return;
@@ -6280,6 +6283,7 @@ async function chargerLots(files){
   }
 
   await chargerPhotosDepuisIDBProgressif();
+  window._chargementManuelRecent = Date.now();
   render();
   _hideLoading();
   sauvegarderLocal();
@@ -6530,6 +6534,11 @@ const _COLLECTION_INTEGREE = {"version":5,"savedAt":"2026-06-01T06:36:26.333Z","
 async function syncAuDemarrage(){
   const gistId = localStorage.getItem('sync_bin_id');
   if(!gistId) return;
+  // Si un chargement/fusion manuel vient d'avoir lieu (< 60s), on ne lance pas
+  // la sync auto : elle risquerait d'écraser/recharger ce qu'on vient d'importer
+  // pendant que la mémoire est déjà sous pression (cause du crash "Out of Memory"
+  // qui survenait ~2 min après le chargement d'une sauvegarde).
+  if(window._chargementManuelRecent && (Date.now()-window._chargementManuelRecent) < 60000) return;
   const ind = document.getElementById('save-indicator');
   try{
     const headers = {'Accept':'application/vnd.github+json'};
@@ -6585,8 +6594,8 @@ async function syncAuDemarrage(){
         }
       });
 
-      // Recharger les photos depuis IndexedDB (lecture seule)
-      await chargerPhotosDepuisIDB();
+      // Recharger les photos depuis IndexedDB (lecture seule, par petits lots)
+      await chargerPhotosDepuisIDBProgressif();
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         version:4, savedAt:gistDate.toISOString(),
