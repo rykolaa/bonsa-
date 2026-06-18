@@ -6422,17 +6422,27 @@ async function _fusionnerPots(pots){
   let nbAjoutes = 0;
   for(const p of pots){
     const dejaPresent = db.pots.find(x=>x.id===p.id && x.nom===p.nom);
-    if(dejaPresent) continue;
+    if(dejaPresent){
+      // Le pot existe déjà — mais ses photos sont peut-être absentes d'IDB.
+      // On les transfère si elles sont présentes dans la sauvegarde importée.
+      for(const ph of (p.photos||[])){
+        if(ph.dataUrl){
+          await idbSauverPhoto('pot_'+p.id, ph.id, ph.dataUrl);
+          // Mettre à jour la dataUrl en mémoire pour l'affichage immédiat
+          const phEnMemoire = (dejaPresent.photos||[]).find(x=>x.id===ph.id);
+          if(phEnMemoire) phEnMemoire.dataUrl = ph.dataUrl;
+          else { if(!dejaPresent.photos) dejaPresent.photos=[]; dejaPresent.photos.push({...ph}); }
+        }
+      }
+      continue;
+    }
     const idEnConflit = db.pots.find(x=>x.id===p.id);
     const potId = idEnConflit ? db.nextPotId++ : p.id;
     if(!idEnConflit) db.nextPotId = Math.max(db.nextPotId, p.id+1);
-    // Transférer les photos vers IDB et les vider en mémoire
     const photosAllege = [];
     for(const ph of (p.photos||[])){
       if(ph.dataUrl){ await idbSauverPhoto('pot_'+potId, ph.id, ph.dataUrl); }
-      photosAllege.push({...ph, dataUrl: ph.dataUrl ? ph.dataUrl : null});
-      // On conserve la dataUrl en mémoire pour l'affichage immédiat,
-      // mais sauvegarderLocal() l'exclura du localStorage.
+      photosAllege.push({...ph});
     }
     db.pots.push({...p, id: potId, photos: photosAllege});
     nbAjoutes++;
