@@ -5576,6 +5576,26 @@ async function chargerPhotosDepuisIDB(){
   });
 }
 
+// Variante progressive : évite la map intermédiaire (qui double la mémoire des dataUrl)
+// et laisse respirer le navigateur entre chaque lot, pour ne pas créer un second pic
+// mémoire juste après celui du transfert initial vers IndexedDB.
+async function chargerPhotosDepuisIDBProgressif(){
+  const toutes = await idbToutesPhotos();
+  // Index par clé une seule fois, mais en pointant vers les entrées IDB directement
+  // (pas de copie des dataUrl dans un objet séparé)
+  const index = new Map();
+  for(const r of toutes) index.set(r.key, r);
+
+  for(let i=0;i<db.arbres.length;i++){
+    const a = db.arbres[i];
+    for(const p of (a.photos||[])){
+      const entry = index.get(_photoKey(a.id, p.id));
+      if(entry){ p.dataUrl = entry.dataUrl; }
+    }
+    if(i%20===0) await new Promise(r=>setTimeout(r,0));
+  }
+}
+
 // ── COMPRESSION PHOTO + CORRECTION EXIF ──────────────────────────────────────
 // Lit l'orientation EXIF et fait pivoter le canvas en conséquence
 // Évite les "bandes de couleur" causées par les photos de smartphone rotées
@@ -6116,6 +6136,9 @@ async function chargerJSON(input){
       let data;
       try{ data = JSON.parse(e.target.result); }
       catch(err){ _hideLoading(); alert('JSON invalide : '+err.message); return; }
+      // Libérer le texte brut (peut faire 50+ Mo) dès que possible — évite de le garder
+      // en mémoire en plus de l'objet parsé pendant tout le reste du chargement.
+      e.target.result = null;
       const collection = data.db || data;
       if(!collection.arbres || !Array.isArray(collection.arbres)){
         _hideLoading(); alert('Format non reconnu'); return;
@@ -6256,7 +6279,7 @@ async function chargerLots(files){
     if(arbreIdx % 8 === 0) render();
   }
 
-  await chargerPhotosDepuisIDB();
+  await chargerPhotosDepuisIDBProgressif();
   render();
   _hideLoading();
   sauvegarderLocal();
@@ -6297,17 +6320,22 @@ async function _chargerCollection(collection){
   const idb = await ouvrirIDB();
   await new Promise(res=>{ const tx=idb.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).clear(); tx.oncomplete=res; });
 
+  const arbresSource = collection.arbres||[];
   let nbPhotos = 0;
-  for(const a of collection.arbres||[]){
+  for(let i=0;i<arbresSource.length;i++){
+    const a = arbresSource[i];
     for(const p of (a.photos||[])){
       if(p.dataUrl){ await idbSauverPhoto(a.id, p.id, p.dataUrl); p.dataUrl=null; nbPhotos++; }
     }
+    // Laisser respirer le navigateur tous les 20 arbres : ça donne une chance au GC
+    // de libérer les dataUrl déjà transférées avant de continuer (évite le pic mémoire).
+    if(i%20===0) await new Promise(r=>setTimeout(r,0));
   }
 
-  db.arbres = collection.arbres||[];
+  db.arbres = arbresSource;
   // Migration : normaliser les styles stockés comme objets
   db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
-  db.nextId = collection.nextId || (Math.max(0,...(collection.arbres||[]).map(a=>a.id||0))+1);
+  db.nextId = collection.nextId || (Math.max(0,...db.arbres.map(a=>a.id||0))+1);
   if(collection.pots) db.pots=collection.pots;
   if(collection.substrats) db.substrats=collection.substrats;
   if(collection.melanges) db.melanges=collection.melanges;
@@ -6325,7 +6353,9 @@ async function _chargerCollection(collection){
   if(collection.nextProdId) db.nextProdId=collection.nextProdId;
   if(collection.nextRempId) db.nextRempId=collection.nextRempId;
 
-  await chargerPhotosDepuisIDB();
+  // Recharge les photos depuis IndexedDB par petits lots (au lieu de tout d'un coup)
+  // pour éviter un second pic mémoire juste après celui du transfert ci-dessus.
+  await chargerPhotosDepuisIDBProgressif();
   sauvegarderLocal();
 }
 
@@ -6610,7 +6640,7 @@ async function initialiser(){
         if(collection.nextEngId) db.nextEngId = collection.nextEngId;
         if(collection.nextProdId) db.nextProdId = collection.nextProdId;
         // 2. Recharger les photos depuis IndexedDB
-        await chargerPhotosDepuisIDB();
+        await chargerPhotosDepuisIDBProgressif();
         render();
         const savedAt = data.savedAt ? new Date(data.savedAt).toLocaleString('fr-CH') : '';
         const nbPhotos = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
