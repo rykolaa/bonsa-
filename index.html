@@ -6091,12 +6091,19 @@ function sauvegarderLocal(){
       ...a,
       photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
     }));
+    // Les pots peuvent eux aussi avoir des photos avec dataUrl (cause du dépassement
+    // de quota localStorage observé : 7 pots avec photos pouvaient peser 50+ Mo à eux
+    // seuls). On les allège de la même façon que les arbres.
+    const potsLeger = (db.pots||[]).map(p=>({
+      ...p,
+      photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))
+    }));
     const payload = JSON.stringify({
       version:4, savedAt:new Date().toISOString(),
       nextId:db.nextId, nextPotId:db.nextPotId||1,
       nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
-      pots:db.pots||[], substrats:db.substrats||[],
+      pots:potsLeger, substrats:db.substrats||[],
       melanges:db.melanges||[], rempotages:db.rempotages||[],
       engrais:db.engrais||[], produits:db.produits||[],
       especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
@@ -6244,7 +6251,7 @@ async function chargerLots(files){
 
   // Charger métadonnées
   db.arbres = [];
-  if(headerCollection.pots) db.pots=headerCollection.pots;
+  if(headerCollection.pots) db.pots=headerCollection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
   if(headerCollection.substrats) db.substrats=headerCollection.substrats;
   if(headerCollection.melanges) db.melanges=headerCollection.melanges;
   if(headerCollection.rempotages) db.rempotages=headerCollection.rempotages;
@@ -6340,7 +6347,7 @@ async function _chargerCollection(collection){
   // Migration : normaliser les styles stockés comme objets
   db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
   db.nextId = collection.nextId || (Math.max(0,...db.arbres.map(a=>a.id||0))+1);
-  if(collection.pots) db.pots=collection.pots;
+  if(collection.pots) db.pots=collection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
   if(collection.substrats) db.substrats=collection.substrats;
   if(collection.melanges) db.melanges=collection.melanges;
   if(collection.rempotages) db.rempotages=collection.rempotages;
@@ -6376,13 +6383,18 @@ async function _fusionnerArbres(arbres){
 }
 
 // Fusionne uniquement les pots (dédoublonnage par id, réattribution si collision)
+// Fusionne uniquement les pots (dédoublonnage par id, réattribution si collision)
+// Les éventuelles photos de pots (avec dataUrl en base64) sont allégées : elles ne sont
+// affichées nulle part dans l'app actuelle et leur poids (50+ Mo pour quelques pots)
+// provoquait un dépassement du quota localStorage puis un crash mémoire de l'onglet.
 function _fusionnerPots(pots){
   let nbAjoutes = 0;
   for(const p of pots){
     const dejaPresent = db.pots.find(x=>x.id===p.id && x.nom===p.nom);
     if(dejaPresent) continue; // déjà présent (même id et même nom)
     const idEnConflit = db.pots.find(x=>x.id===p.id);
-    const potAFusionner = idEnConflit ? {...p, id: db.nextPotId++} : p;
+    const pAllege = {...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))};
+    const potAFusionner = idEnConflit ? {...pAllege, id: db.nextPotId++} : pAllege;
     if(!idEnConflit) db.nextPotId = Math.max(db.nextPotId, p.id+1);
     db.pots.push(potAFusionner);
     nbAjoutes++;
@@ -6633,7 +6645,7 @@ async function initialiser(){
         // Migration : normaliser les styles stockés comme objets {kanji,romaji,fr}
         db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
         db.nextId = collection.nextId || (Math.max(0,...collection.arbres.map(a=>a.id||0)) + 1);
-        if(collection.pots) db.pots = collection.pots;
+        if(collection.pots) db.pots = collection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
         if(collection.substrats) db.substrats = collection.substrats;
         if(collection.melanges) db.melanges = collection.melanges;
         if(collection.rempotages) db.rempotages = collection.rempotages;
