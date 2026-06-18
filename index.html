@@ -5293,15 +5293,22 @@ function ajouterPhotosPot(input){
 }
 
 window._potPhotosTmp=[];
-function sauvegarderPot(id, fromRemp=false){
+async function sauvegarderPot(id, fromRemp=false){
   const nom=document.getElementById('p-nom').value.trim();
   if(!nom){alert('Le nom est requis');return;}
+  const potId = id || db.nextPotId;
+  // Transférer les nouvelles photos vers IDB (pot_ prefix) et vider les dataUrl en mémoire
+  const photosAllege = [];
+  for(const ph of (window._potPhotosTmp||[])){
+    if(ph.dataUrl){ await idbSauverPhoto('pot_'+potId, ph.id, ph.dataUrl); }
+    photosAllege.push({...ph}); // garde dataUrl pour l'affichage immédiat dans la session
+  }
   const data={nom,forme:document.getElementById('p-forme').value,matiere:document.getElementById('p-mat').value,statut:document.getElementById('p-statut').value,
     long:parseFloat(document.getElementById('p-l').value)||0,larg:parseFloat(document.getElementById('p-w').value)||0,haut:parseFloat(document.getElementById('p-h').value)||0,
     poids:parseFloat(document.getElementById('p-poids').value)||null,id_couleur:document.getElementById('p-couleur').value,
     prix:parseFloat(document.getElementById('p-prix').value)||0,date_acq:document.getElementById('p-date').value,
     provenance:document.getElementById('p-prov').value,fournisseur:document.getElementById('p-four').value,
-    notes:document.getElementById('p-notes').value,photos:window._potPhotosTmp,arbre_id:null};
+    notes:document.getElementById('p-notes').value,photos:photosAllege,arbre_id:null};
   if(id){Object.assign(db.pots.find(x=>x.id===id),data);}
   else{data.id=db.nextPotId++;db.pots.push(data);}
   closeModal();
@@ -5574,6 +5581,13 @@ async function chargerPhotosDepuisIDB(){
       if(map[key]) p.dataUrl = map[key];
     });
   });
+  // Recharger aussi les photos de pots depuis IDB
+  db.pots.forEach(p=>{
+    (p.photos||[]).forEach(ph=>{
+      const key = 'pot_'+_photoKey(p.id, ph.id);
+      if(map[key]) ph.dataUrl = map[key];
+    });
+  });
 }
 
 // Variante progressive : évite la map intermédiaire (qui double la mémoire des dataUrl)
@@ -5581,8 +5595,6 @@ async function chargerPhotosDepuisIDB(){
 // mémoire juste après celui du transfert initial vers IndexedDB.
 async function chargerPhotosDepuisIDBProgressif(){
   const toutes = await idbToutesPhotos();
-  // Index par clé une seule fois, mais en pointant vers les entrées IDB directement
-  // (pas de copie des dataUrl dans un objet séparé)
   const index = new Map();
   for(const r of toutes) index.set(r.key, r);
 
@@ -5593,6 +5605,15 @@ async function chargerPhotosDepuisIDBProgressif(){
       if(entry){ p.dataUrl = entry.dataUrl; }
     }
     if(i%20===0) await new Promise(r=>setTimeout(r,0));
+  }
+  // Recharger aussi les photos de pots
+  for(let i=0;i<db.pots.length;i++){
+    const p = db.pots[i];
+    for(const ph of (p.photos||[])){
+      const entry = index.get('pot_'+_photoKey(p.id, ph.id));
+      if(entry){ ph.dataUrl = entry.dataUrl; }
+    }
+    if(i%5===0) await new Promise(r=>setTimeout(r,0));
   }
 }
 
@@ -6347,7 +6368,18 @@ async function _chargerCollection(collection){
   // Migration : normaliser les styles stockés comme objets
   db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
   db.nextId = collection.nextId || (Math.max(0,...db.arbres.map(a=>a.id||0))+1);
-  if(collection.pots) db.pots=collection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
+  // Transférer les photos de pots vers IDB (préfixe pot_) pour ne pas saturer localStorage
+  if(collection.pots){
+    db.pots = [];
+    for(let pi=0;pi<collection.pots.length;pi++){
+      const p = collection.pots[pi];
+      for(const ph of (p.photos||[])){
+        if(ph.dataUrl){ await idbSauverPhoto('pot_'+p.id, ph.id, ph.dataUrl); }
+      }
+      db.pots.push({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))});
+      if(pi%5===0) await new Promise(r=>setTimeout(r,0));
+    }
+  }
   if(collection.substrats) db.substrats=collection.substrats;
   if(collection.melanges) db.melanges=collection.melanges;
   if(collection.rempotages) db.rempotages=collection.rempotages;
@@ -6384,19 +6416,25 @@ async function _fusionnerArbres(arbres){
 
 // Fusionne uniquement les pots (dédoublonnage par id, réattribution si collision)
 // Fusionne uniquement les pots (dédoublonnage par id, réattribution si collision)
-// Les éventuelles photos de pots (avec dataUrl en base64) sont allégées : elles ne sont
-// affichées nulle part dans l'app actuelle et leur poids (50+ Mo pour quelques pots)
-// provoquait un dépassement du quota localStorage puis un crash mémoire de l'onglet.
-function _fusionnerPots(pots){
+// Les photos de pots sont transférées vers IndexedDB (préfixe pot_) pour éviter
+// de les garder en mémoire vive et de dépasser le quota localStorage.
+async function _fusionnerPots(pots){
   let nbAjoutes = 0;
   for(const p of pots){
     const dejaPresent = db.pots.find(x=>x.id===p.id && x.nom===p.nom);
-    if(dejaPresent) continue; // déjà présent (même id et même nom)
+    if(dejaPresent) continue;
     const idEnConflit = db.pots.find(x=>x.id===p.id);
-    const pAllege = {...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))};
-    const potAFusionner = idEnConflit ? {...pAllege, id: db.nextPotId++} : pAllege;
+    const potId = idEnConflit ? db.nextPotId++ : p.id;
     if(!idEnConflit) db.nextPotId = Math.max(db.nextPotId, p.id+1);
-    db.pots.push(potAFusionner);
+    // Transférer les photos vers IDB et les vider en mémoire
+    const photosAllege = [];
+    for(const ph of (p.photos||[])){
+      if(ph.dataUrl){ await idbSauverPhoto('pot_'+potId, ph.id, ph.dataUrl); }
+      photosAllege.push({...ph, dataUrl: ph.dataUrl ? ph.dataUrl : null});
+      // On conserve la dataUrl en mémoire pour l'affichage immédiat,
+      // mais sauvegarderLocal() l'exclura du localStorage.
+    }
+    db.pots.push({...p, id: potId, photos: photosAllege});
     nbAjoutes++;
   }
   return nbAjoutes;
