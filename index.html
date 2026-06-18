@@ -6447,7 +6447,7 @@ async function _fusionnerCollection(collection){
   const maxId = Math.max(db.nextId, ...(collection.arbres||[]).map(a=>a.id||0))+1;
   db.nextId = maxId;
   // Fusionner les pots (absents de l'ancienne logique de fusion)
-  const nbPotsAjoutes = _fusionnerPots(collection.pots||[]);
+  const nbPotsAjoutes = await _fusionnerPots(collection.pots||[]);
   if(nbPotsAjoutes>0) sauvegarderLocal();
   return { nbPotsAjoutes };
 }
