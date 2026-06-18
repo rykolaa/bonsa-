@@ -5297,11 +5297,19 @@ async function sauvegarderPot(id, fromRemp=false){
   const nom=document.getElementById('p-nom').value.trim();
   if(!nom){alert('Le nom est requis');return;}
   const potId = id || db.nextPotId;
-  // Transférer les nouvelles photos vers IDB (pot_ prefix) et vider les dataUrl en mémoire
+  // Compresser + transférer les nouvelles photos vers IDB (pot_ prefix)
+  // même compression que pour les photos d'arbres : 900px / qualité 70%
   const photosAllege = [];
   for(const ph of (window._potPhotosTmp||[])){
-    if(ph.dataUrl){ await idbSauverPhoto('pot_'+potId, ph.id, ph.dataUrl); }
-    photosAllege.push({...ph}); // garde dataUrl pour l'affichage immédiat dans la session
+    if(ph.dataUrl){
+      let dataUrlFinal = ph.dataUrl;
+      try{ dataUrlFinal = await compresserPhoto(ph.dataUrl, 900, 0.70); }
+      catch(e){ console.warn('Compression photo pot:', e); }
+      await idbSauverPhoto('pot_'+potId, ph.id, dataUrlFinal);
+      photosAllege.push({...ph, dataUrl: dataUrlFinal});
+    } else {
+      photosAllege.push({...ph});
+    }
   }
   const data={nom,forme:document.getElementById('p-forme').value,matiere:document.getElementById('p-mat').value,statut:document.getElementById('p-statut').value,
     long:parseFloat(document.getElementById('p-l').value)||0,larg:parseFloat(document.getElementById('p-w').value)||0,haut:parseFloat(document.getElementById('p-h').value)||0,
