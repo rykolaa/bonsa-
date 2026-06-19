@@ -5286,17 +5286,21 @@ function ouvrirVideo(src,nom){
 function dupliquerPot(id){
   const p = db.pots.find(x=>x.id===id);
   if(!p) return;
+  const photosCopiees = (p.photos||[]).map(ph=>({
+    ...ph,
+    id: 'p'+Date.now()+'_'+Math.random().toString(36).slice(2,8)
+  }));
   const newPot = {...p,
     id: db.nextPotId++,
     nom: p.nom + ' (copie)',
     statut: 'libre',
     arbre_id: null,
-    photos: []
+    photos: photosCopiees
   };
   db.pots.push(newPot);
   autoSave();
   renderAtelier(document.getElementById('content'));
-  afficherIndicateur(`✅ Pot "${p.nom}" dupliqué`);
+  afficherIndicateur(`✅ Pot "${p.nom}" dupliqué avec ${photosCopiees.length} photo${photosCopiees.length>1?'s':''}`);
 }
 
 function openPotModal(id, fromRemp=false){
