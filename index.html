@@ -4163,6 +4163,21 @@ function togglePotSelection(id){
   renderAtelier(document.getElementById('content'));
 }
 
+function toggleSelectionLotPots(ids){
+  state.potSelection = state.potSelection || [];
+  const tousCoches = ids.every(id=>state.potSelection.includes(id));
+  if(tousCoches){
+    // décoche tout le lot
+    state.potSelection = state.potSelection.filter(id=>!ids.includes(id));
+  } else {
+    // coche les pots du lot pas encore sélectionnés
+    ids.forEach(id=>{
+      if(!state.potSelection.includes(id)) state.potSelection.push(id);
+    });
+  }
+  renderAtelier(document.getElementById('content'));
+}
+
 function selectionnerTousPotsVisibles(idsVisibles){
   state.potSelection = [...idsVisibles];
   renderAtelier(document.getElementById('content'));
@@ -4318,8 +4333,11 @@ function renderPots(c){
           if(lotPots.length===1){
             out+=`<div class="pot-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${potCardHtml(ref)}</div>`;
           } else {
+            const lotIds = lotPots.map(p=>p.id);
+            const tousCoches = selMode && lotIds.every(id=>(state.potSelection||[]).includes(id));
             out+=`<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
               <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer" onclick="event.stopPropagation();togglePotGroup('${lotKey.replace(/'/g,"\\'")}')">
+                ${selMode?`<input type="checkbox" ${tousCoches?'checked':''} onclick='event.stopPropagation();toggleSelectionLotPots(${JSON.stringify(lotIds)})' style="width:18px;height:18px;cursor:pointer;accent-color:var(--moss)">`:''}
                 <span style="font-size:12px;transition:transform .15s;display:inline-block;transform:rotate(${lotFermee?'-90deg':'0deg'})">▾</span>
                 <span style="width:14px;height:14px;border-radius:3px;background:${ref.id_couleur||'#ccc'};flex-shrink:0;display:inline-block;border:1px solid var(--border)"></span>
                 <span style="font-size:13px">${ref.forme||'?'} · ${ref.matiere||'?'} · ${ref.long}×${ref.larg}×${ref.haut} cm</span>
