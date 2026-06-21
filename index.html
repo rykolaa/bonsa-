@@ -4214,7 +4214,7 @@ function potLotKey(p){
 
 function togglePotGroup(key){
   state.potGroupesFermes = state.potGroupesFermes || {};
-  state.potGroupesFermes[key] = !state.potGroupesFermes[key];
+  state.potGroupesFermes[key] = state.potGroupesFermes[key]==='ouvert' ? 'ferme' : 'ouvert';
   renderAtelier(document.getElementById('content'));
 }
 
@@ -4288,7 +4288,7 @@ function renderPots(c){
   fabricants.forEach((four,fi)=>{
     const potsFour = parFabricant[four];
     const fourKey = 'f_'+fi+'_'+four;
-    const fourFermee = !!fermes[fourKey];
+    const fourFermee = fermes[fourKey] !== 'ouvert';
 
     // sous-groupage en lots
     const parLot = {};
@@ -4329,7 +4329,7 @@ function renderPots(c){
           const lotPots = parLot[lk];
           const ref = lotPots[0];
           const lotKey = prefix+'_l_'+li+'_'+lk;
-          const lotFermee = !!fermes[lotKey];
+          const lotFermee = fermes[lotKey] !== 'ouvert';
           if(lotPots.length===1){
             out+=`<div class="pot-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${potCardHtml(ref)}</div>`;
           } else {
@@ -4353,7 +4353,7 @@ function renderPots(c){
       collectionKeys.forEach((colNom,ci)=>{
         const colPots = parCollection[colNom];
         const colKey = 'c_'+fi+'_'+ci+'_'+colNom;
-        const colFermee = !!fermes[colKey];
+        const colFermee = fermes[colKey] !== 'ouvert';
         html+=`<div style="border:1px solid var(--gold);border-radius:9px;overflow:hidden;background:#fffdf7">
           <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer" onclick="event.stopPropagation();togglePotGroup('${colKey.replace(/'/g,"\\'")}')">
             <span style="font-size:13px;transition:transform .15s;display:inline-block;transform:rotate(${colFermee?'-90deg':'0deg'})">▾</span>
