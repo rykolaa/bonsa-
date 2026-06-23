@@ -2973,7 +2973,7 @@ function openTravailModal(arbreId, travailIdx){
         return `
       <div class="form-row">
         <div class="fg"><label>Pot utilisé</label>
-          <select id="f-remp-pot">
+          <select id="f-remp-pot" onchange="afficherVolumeRefPot(this.value)">
             <option value="">— Choisir dans la collection —</option>
             ${db.pots.map(p=>`<option value="${p.id}" ${r&&r.pot_id===p.id?'selected':''}>${p.nom} · ${p.long}×${p.larg}×${p.haut}cm${p.matiere?' · '+p.matiere:''}</option>`).join('')}
             <option value="__libre">✏️ Saisie libre…</option>
@@ -3002,7 +3002,10 @@ function openTravailModal(arbreId, travailIdx){
             <option value="__libre">✏️ Saisie libre…</option>
           </select>
         </div>
-        <div class="fg"><label>Litres utilisés</label><input id="f-remp-litres" type="number" step="0.1" min="0" value="${r?.litres_utilises||''}" oninput="updateCoutSubstratTrav()" placeholder="ex: 2.5"></div>
+        <div class="fg">
+          <label>Litres utilisés <span id="f-remp-vol-ref" style="font-size:11px;color:var(--moss);font-weight:600;margin-left:6px">${(()=>{if(!r?.pot_id)return'';const pot=db.pots.find(p=>p.id===r.pot_id);if(!pot)return'';const vol=pot.volume_litres||(pot.int_long&&pot.int_larg&&pot.int_haut?(pot.int_long*pot.int_larg*pot.int_haut/1000):null);return vol?'(pot : '+vol.toFixed(2)+' L)':'';})()}</span></label>
+          <input id="f-remp-litres" type="number" step="0.1" min="0" value="${r?.litres_utilises||''}" oninput="updateCoutSubstratTrav()" placeholder="ex: 2.5">
+        </div>
       </div>
       <div id="f-remp-mel-libre-wrap" style="display:none">
         <div class="form-row one"><div class="fg"><label>Substrat (description libre)</label><input id="f-substrat" value="${trav?.substrat||''}" placeholder="Ex: Akadama 60% / Pumice 40%"></div></div>
@@ -5453,6 +5456,20 @@ function openPotModal(id, fromRemp=false){
       <div class="fg"><label>Largeur (cm)</label><input id="p-w" type="number" step="0.5" value="${isEdit?p.larg:''}"></div>
       <div class="fg"><label>Hauteur (cm)</label><input id="p-h" type="number" step="0.5" value="${isEdit?p.haut:''}"></div>
     </div>
+    <div class="form-section" style="margin-top:10px">Dimensions intérieures & Volume</div>
+    <div class="form-row three">
+      <div class="fg"><label>Long. int. (cm)</label><input id="p-il" type="number" step="0.5" value="${isEdit?p.int_long||'':''}" oninput="calcVolumePot()"></div>
+      <div class="fg"><label>Larg. int. (cm)</label><input id="p-iw" type="number" step="0.5" value="${isEdit?p.int_larg||'':''}" oninput="calcVolumePot()"></div>
+      <div class="fg"><label>Haut. int. (cm)</label><input id="p-ih" type="number" step="0.5" value="${isEdit?p.int_haut||'':''}" oninput="calcVolumePot()"></div>
+    </div>
+    <div class="form-row">
+      <div class="fg" style="display:flex;align-items:center;gap:10px">
+        <label style="margin:0">Volume intérieur</label>
+        <div id="p-volume-display" style="font-size:14px;font-weight:600;color:var(--moss);padding:6px 12px;background:var(--moss-light);border-radius:6px">${isEdit&&p.int_long&&p.int_larg&&p.int_haut?((p.int_long*p.int_larg*p.int_haut)/1000).toFixed(2)+' L':'— L'}</div>
+        <span style="font-size:12px;color:var(--stone)">calculé automatiquement</span>
+      </div>
+      <div class="fg"><label>Volume saisi (L)</label><input id="p-vol" type="number" step="0.1" min="0" value="${isEdit?p.volume_litres||'':''}" placeholder="Saisie manuelle"></div>
+    </div>
     <div class="form-row">
       <div class="fg"><label>Poids (kg)</label><input id="p-poids" type="number" step="0.05" value="${isEdit?p.poids:''}"></div>
       <div class="fg"><label>Couleur dominante</label><input id="p-couleur" type="color" value="${isEdit?p.id_couleur:'#8a8a7e'}" style="height:36px;width:100%;border-radius:6px;border:1px solid var(--border);cursor:pointer"></div>
@@ -5547,6 +5564,32 @@ function reconstruireCollectionsPots(){
   db.collections_pots.sort((a,b)=>a.localeCompare(b));
 }
 
+function calcVolumePot(){
+  const l = parseFloat(document.getElementById('p-il')?.value)||0;
+  const w = parseFloat(document.getElementById('p-iw')?.value)||0;
+  const h = parseFloat(document.getElementById('p-ih')?.value)||0;
+  const el = document.getElementById('p-volume-display');
+  if(!el) return;
+  if(l && w && h){
+    el.textContent = ((l*w*h)/1000).toFixed(2) + ' L';
+    el.style.color = 'var(--moss)';
+  } else {
+    el.textContent = '— L';
+    el.style.color = 'var(--stone)';
+  }
+}
+
+function afficherVolumeRefPot(potIdStr){
+  const ref = document.getElementById('f-remp-vol-ref');
+  if(!ref) return;
+  const id = parseInt(potIdStr);
+  if(!id){ ref.textContent=''; return; }
+  const pot = db.pots.find(p=>p.id===id);
+  if(!pot){ ref.textContent=''; return; }
+  const vol = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut/1000 : null);
+  ref.textContent = vol ? '(pot : '+vol.toFixed(2)+' L)' : '';
+}
+
 window._potPhotosTmp=[];
 async function sauvegarderPot(id, fromRemp=false){
   const nom=document.getElementById('p-nom').value.trim();
@@ -5568,6 +5611,8 @@ async function sauvegarderPot(id, fromRemp=false){
   }
   const data={nom,forme:document.getElementById('p-forme').value,matiere:document.getElementById('p-mat').value,statut:document.getElementById('p-statut').value,
     long:parseFloat(document.getElementById('p-l').value)||0,larg:parseFloat(document.getElementById('p-w').value)||0,haut:parseFloat(document.getElementById('p-h').value)||0,
+    int_long:parseFloat(document.getElementById('p-il').value)||null,int_larg:parseFloat(document.getElementById('p-iw').value)||null,int_haut:parseFloat(document.getElementById('p-ih').value)||null,
+    volume_litres:parseFloat(document.getElementById('p-vol').value)||null,
     poids:parseFloat(document.getElementById('p-poids').value)||null,id_couleur:document.getElementById('p-couleur').value,
     prix:parseFloat(document.getElementById('p-prix').value)||0,date_acq:document.getElementById('p-date').value,
     provenance:document.getElementById('p-prov').value,fournisseur:document.getElementById('p-four').value,
