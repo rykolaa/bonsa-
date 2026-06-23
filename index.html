@@ -4259,12 +4259,13 @@ function renderPots(c){
   const vendus = db.pots.filter(p=>p.statut==='vendu').length;
   const valTotale = db.pots.reduce((s,p)=>s+(p.prix||0),0);
 
-  html+=`<div class="kpi-row" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
+  html+=`<div class="kpi-row" style="grid-template-columns:repeat(6,1fr);margin-bottom:16px">
     <div class="kpi"><div class="kpi-label">Total pots</div><div class="kpi-val">${db.pots.length}</div></div>
     <div class="kpi"><div class="kpi-label">Disponibles</div><div class="kpi-val" style="color:var(--moss)">${libres}</div></div>
     <div class="kpi"><div class="kpi-label">En service</div><div class="kpi-val" style="color:var(--gold)">${db.pots.length-libres-casses-vendus}</div></div>
     <div class="kpi"><div class="kpi-label">Cassés</div><div class="kpi-val" style="color:#8b2020">${casses}</div></div>
     <div class="kpi"><div class="kpi-label">Vendus</div><div class="kpi-val" style="color:#2d2d7a">${vendus}</div></div>
+    <div class="kpi"><div class="kpi-label">Valeur collection</div><div class="kpi-val" style="font-size:15px">${fmtCHF(valTotale)}</div></div>
   </div>`;
 
   if(!pots.length){html+=`<div class="empty"><div class="empty-icon">⬛</div><div>Aucun pot trouvé</div></div>`;c.innerHTML=existing+html;return;}
