@@ -5536,6 +5536,16 @@ function ajouterNouvelleCollectionPot(){
   sel.value = nomPropre;
 }
 
+// Reconstruit db.collections_pots depuis les pots existants (filet de sécurité après chargement)
+function reconstruireCollectionsPots(){
+  db.collections_pots = db.collections_pots || [];
+  (db.pots||[]).forEach(p=>{
+    const col = (p.collection||'').trim();
+    if(col && !db.collections_pots.includes(col)) db.collections_pots.push(col);
+  });
+  db.collections_pots.sort((a,b)=>a.localeCompare(b));
+}
+
 window._potPhotosTmp=[];
 async function sauvegarderPot(id, fromRemp=false){
   const nom=document.getElementById('p-nom').value.trim();
@@ -6526,6 +6536,7 @@ async function chargerLots(files){
   // Charger métadonnées
   db.arbres = [];
   if(headerCollection.pots) db.pots=headerCollection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
+  reconstruireCollectionsPots();
   if(headerCollection.substrats) db.substrats=headerCollection.substrats;
   if(headerCollection.melanges) db.melanges=headerCollection.melanges;
   if(headerCollection.rempotages) db.rempotages=headerCollection.rempotages;
@@ -6892,6 +6903,7 @@ async function syncAuDemarrage(){
       db.arbres.forEach(a=>{ if(a.style&&typeof a.style==='object') a.style=a.style.fr||a.style.romaji||''; });
       db.nextId = c.nextId||(Math.max(0,...c.arbres.map(a=>a.id||0))+1);
       if(c.pots) db.pots=c.pots;
+      reconstruireCollectionsPots();
       if(c.substrats) db.substrats=c.substrats;
       if(c.melanges) db.melanges=c.melanges;
       if(c.rempotages) db.rempotages=c.rempotages;
@@ -6947,6 +6959,7 @@ async function initialiser(){
         db.arbres.forEach(a => { if(a.style && typeof a.style === 'object') a.style = a.style.fr || a.style.romaji || ''; });
         db.nextId = collection.nextId || (Math.max(0,...collection.arbres.map(a=>a.id||0)) + 1);
         if(collection.pots) db.pots = collection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
+        reconstruireCollectionsPots();
         if(collection.substrats) db.substrats = collection.substrats;
         if(collection.melanges) db.melanges = collection.melanges;
         if(collection.rempotages) db.rempotages = collection.rempotages;
