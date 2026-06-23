@@ -299,6 +299,8 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .pot-card-meta{font-size:11px;color:var(--stone);margin-bottom:6px}
 .pot-status-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;display:inline-block}
 .pot-libre{background:#e8f0e6;color:#2d5a27}
+.pot-casse{background:#f5e6e6;color:#8b2020}
+.pot-vendu{background:#e6e6f0;color:#2d2d7a}
 .pot-utilise{background:#faeeda;color:#854f0b}
 .substrat-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;transition:.15s}
 .substrat-card:hover{border-color:var(--moss-mid)}
@@ -4136,7 +4138,7 @@ function potCardHtml(p){
     ${selMode?`<div style="position:absolute;top:8px;left:8px;z-index:2"><input type="checkbox" ${checked?'checked':''} onclick="event.stopPropagation();togglePotSelection(${p.id})" style="width:20px;height:20px;cursor:pointer;accent-color:var(--moss)"></div>`:''}
     <div class="pot-card-img">
       ${cover?`<img src="${cover.dataUrl}" alt="${p.nom}">`:`<span style="font-size:44px">⬛</span>`}
-      <div style="position:absolute;top:8px;right:8px"><span class="pot-status-badge ${p.statut==='libre'?'pot-libre':'pot-utilise'}">${p.statut==='libre'?'Disponible':'En service'}</span></div>
+      <div style="position:absolute;top:8px;right:8px"><span class="pot-status-badge ${p.statut==='libre'?'pot-libre':p.statut==='cassé'?'pot-casse':p.statut==='vendu'?'pot-vendu':'pot-utilise'}">${p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':'En service'}</span></div>
       ${!selMode?`<div style="position:absolute;bottom:6px;right:6px"><button class="btn" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,.9)" onclick="event.stopPropagation();dupliquerPot(${p.id})" title="Dupliquer ce pot">⧉ Dupliquer</button></div>`:''}
     </div>
     <div class="pot-card-body">
@@ -4243,7 +4245,7 @@ function renderPots(c){
         <button class="btn" style="border:none;border-radius:0;${vue==='groupe'?'background:var(--moss);color:#fff':''}" onclick="state.potVue='groupe';renderAtelier(document.getElementById('content'))">☰ Par fabricant</button>
       </div>
       <select class="trav-sel" onchange="state.potFlt=this.value;renderAtelier(document.getElementById('content'))">
-        <option value="">Tous les statuts</option><option value="libre">Disponibles</option><option value="utilisé">En service</option>
+        <option value="">Tous les statuts</option><option value="libre">Disponibles</option><option value="utilisé">En service</option><option value="cassé">Cassés</option><option value="vendu">Vendus</option>
       </select>
       <button class="btn ${selMode?'btn-primary':''}" onclick="togglePotSelectMode()">${selMode?'✕ Annuler sélection':'☑ Sélectionner plusieurs'}</button>
       <button class="btn btn-primary" onclick="openPotModal(0)">＋ Nouveau pot</button>
@@ -4253,13 +4255,16 @@ function renderPots(c){
   const flt = state.potFlt||'';
   const pots = db.pots.filter(p=>!flt||p.statut===flt);
   const libres = db.pots.filter(p=>p.statut==='libre').length;
+  const casses = db.pots.filter(p=>p.statut==='cassé').length;
+  const vendus = db.pots.filter(p=>p.statut==='vendu').length;
   const valTotale = db.pots.reduce((s,p)=>s+(p.prix||0),0);
 
-  html+=`<div class="kpi-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+  html+=`<div class="kpi-row" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
     <div class="kpi"><div class="kpi-label">Total pots</div><div class="kpi-val">${db.pots.length}</div></div>
     <div class="kpi"><div class="kpi-label">Disponibles</div><div class="kpi-val" style="color:var(--moss)">${libres}</div></div>
-    <div class="kpi"><div class="kpi-label">En service</div><div class="kpi-val" style="color:var(--gold)">${db.pots.length-libres}</div></div>
-    <div class="kpi"><div class="kpi-label">Valeur collection</div><div class="kpi-val" style="font-size:16px">${fmtCHF(valTotale)}</div></div>
+    <div class="kpi"><div class="kpi-label">En service</div><div class="kpi-val" style="color:var(--gold)">${db.pots.length-libres-casses-vendus}</div></div>
+    <div class="kpi"><div class="kpi-label">Cassés</div><div class="kpi-val" style="color:#8b2020">${casses}</div></div>
+    <div class="kpi"><div class="kpi-label">Vendus</div><div class="kpi-val" style="color:#2d2d7a">${vendus}</div></div>
   </div>`;
 
   if(!pots.length){html+=`<div class="empty"><div class="empty-icon">⬛</div><div>Aucun pot trouvé</div></div>`;c.innerHTML=existing+html;return;}
@@ -5439,7 +5444,7 @@ function openPotModal(id, fromRemp=false){
     </div>
     <div class="form-row">
       <div class="fg"><label>Matière</label><select id="p-mat">${MATIERES_POT.map(f=>`<option ${isEdit&&p.matiere===f?'selected':''}>${f}</option>`).join('')}</select></div>
-      <div class="fg"><label>Statut</label><select id="p-statut"><option value="libre" ${!isEdit||p.statut==='libre'?'selected':''}>Disponible</option><option value="utilisé" ${isEdit&&p.statut==='utilisé'?'selected':''}>En service</option></select></div>
+      <div class="fg"><label>Statut</label><select id="p-statut"><option value="libre" ${!isEdit||p.statut==='libre'?'selected':''}>Disponible</option><option value="utilisé" ${isEdit&&p.statut==='utilisé'?'selected':''}>En service</option><option value="cassé" ${isEdit&&p.statut==='cassé'?'selected':''}>Cassé</option><option value="vendu" ${isEdit&&p.statut==='vendu'?'selected':''}>Vendu</option></select></div>
     </div>
     <div class="form-section">Dimensions & Poids</div>
     <div class="form-row three">
