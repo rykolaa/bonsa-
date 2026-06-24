@@ -5444,10 +5444,10 @@ function openPotModal(id, fromRemp=false){
     <div class="form-section">Identification</div>
     <div class="form-row">
       <div class="fg"><label>Nom / description *</label><input id="p-nom" value="${isEdit?p.nom:''}" placeholder="Ex: Ovale Tokoname bleu"></div>
-      <div class="fg"><label>Forme</label><select id="p-forme">${FORMES_POT.map(f=>`<option ${isEdit&&p.forme===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div class="fg"><label>Forme</label><select id="p-forme"><option value="">— Choisir —</option>${FORMES_POT.map(f=>`<option value="${f}" ${isEdit&&(p.forme||'').trim()===f?'selected':''}>${f}</option>`).join('')}</select></div>
     </div>
     <div class="form-row">
-      <div class="fg"><label>Matière</label><select id="p-mat">${MATIERES_POT.map(f=>`<option ${isEdit&&p.matiere===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div class="fg"><label>Matière</label><select id="p-mat"><option value="">— Choisir —</option>${MATIERES_POT.map(f=>`<option value="${f}" ${isEdit&&(p.matiere||'').trim()===f?'selected':''}>${f}</option>`).join('')}</select></div>
       <div class="fg"><label>Statut</label><select id="p-statut"><option value="libre" ${!isEdit||p.statut==='libre'?'selected':''}>Disponible</option><option value="utilisé" ${isEdit&&p.statut==='utilisé'?'selected':''}>En service</option><option value="cassé" ${isEdit&&p.statut==='cassé'?'selected':''}>Cassé</option><option value="vendu" ${isEdit&&p.statut==='vendu'?'selected':''}>Vendu</option></select></div>
     </div>
     <div class="form-section">Dimensions & Poids</div>
