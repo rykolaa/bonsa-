@@ -344,6 +344,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     </div>
     <button class="btn-add" onclick="openAddModal()">＋ Nouvel arbre</button>
     <button class="btn-add" style="background:var(--rust);gap:5px" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
+    <button class="btn-add" style="background:#7a4ca0;gap:5px" onclick="detecterDoublonsArbres()" title="Détecter les fiches arbres dupliquées (même numéro)">🔍 Doublons</button>
     <div style="display:flex;gap:6px;align-items:center;margin-left:4px;padding-left:10px;border-left:1px solid rgba(255,255,255,.15)">
       <button class="btn-add" style="background:#185fa5" onclick="sauvegarderJSON()" title="Sauvegarder les données (sans photos)">💾 Sauvegarder</button>
       <button class="btn-add" style="background:#2d6e28;font-size:11px;padding:5px 10px" onclick="ouvrirExportModal()" title="Exporter avec photos">📦 Export photos</button>
@@ -3226,6 +3227,71 @@ function deleteArbre(id){
   db.arbres = db.arbres.filter(a=>a.id!==id);
   closeDetail();render();
 }
+
+function scoreCompletudeArbre(a){
+  let s = 0;
+  s += (a.photos||[]).length * 3;
+  s += (a.travaux||[]).length * 2;
+  s += (a.notes||'').trim().length>0 ? 2 : 0;
+  s += (a.hauteur||0)>0 ? 1 : 0;
+  s += (a.diam_tronc||0)>0 ? 1 : 0;
+  s += (a.localisation||'').trim().length>0 ? 1 : 0;
+  s += (a.gps||'').trim().length>0 ? 1 : 0;
+  s += (a.soins_planifies||[]).length;
+  return s;
+}
+
+function detecterDoublonsArbres(){
+  const parNum = {};
+  db.arbres.forEach(a=>{
+    const n = (a.num||'').trim();
+    if(!n) return;
+    (parNum[n]=parNum[n]||[]).push(a);
+  });
+  const groupes = Object.entries(parNum).filter(([n,arr])=>arr.length>1);
+  if(!groupes.length){
+    afficherIndicateur('✅ Aucun doublon détecté (par numéro de fiche)');
+    return;
+  }
+
+  const html = `<div class="dp-head"><div class="dp-head-nom">🔍 ${groupes.length} numéro${groupes.length>1?'s':''} en doublon</div>
+    <button class="btn" onclick="closeModal()">✕</button></div>
+    <div style="padding:20px;max-height:70vh;overflow-y:auto">
+    <p style="margin-bottom:14px;color:var(--stone);font-size:13px">Pour chaque groupe, la fiche la plus complète (photos, travaux, champs remplis) sera <strong>conservée</strong>, les autres seront supprimées. Vérifie avant de confirmer.</p>
+    ${groupes.map(([num,arr],gi)=>{
+      const scored = arr.map(a=>({a,score:scoreCompletudeArbre(a)})).sort((x,y)=>y.score-x.score);
+      const garder = scored[0];
+      const aSupprimer = scored.slice(1);
+      return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="font-weight:600;margin-bottom:8px">Numéro : ${num}</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="background:var(--moss-light);padding:8px;border-radius:6px;font-size:13px">
+            ✅ <strong>Conserver</strong> — ${garder.a.nom} (id ${garder.a.id}) · ${(garder.a.photos||[]).length} photos · ${(garder.a.travaux||[]).length} travaux · score ${garder.score}
+          </div>
+          ${aSupprimer.map(x=>`<div style="background:#f5e6e6;padding:8px;border-radius:6px;font-size:13px">
+            🗑️ <strong>Supprimer</strong> — ${x.a.nom} (id ${x.a.id}) · ${(x.a.photos||[]).length} photos · ${(x.a.travaux||[]).length} travaux · score ${x.score}
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" style="background:#7a4ca0" onclick='confirmerSuppressionDoublons(${JSON.stringify(groupes.map(([num,arr])=>{const scored=arr.map(a=>({id:a.id,score:scoreCompletudeArbre(a)})).sort((x,y)=>y.score-x.score);return scored.slice(1).map(x=>x.id);}).flat())})'>✓ Supprimer les ${groupes.reduce((s,[n,arr])=>s+arr.length-1,0)} doublons</button>
+    </div>
+  </div>`;
+  document.getElementById('modal').innerHTML = html;
+  document.getElementById('modal-overlay').style.display='flex';
+}
+
+function confirmerSuppressionDoublons(idsASupprimer){
+  if(!confirm(`Confirmer la suppression définitive de ${idsASupprimer.length} fiche(s) en doublon ? Cette action ne peut pas être annulée (sauvegarde tes données avant si tu n'es pas sûr).`)) return;
+  db.arbres = db.arbres.filter(a=>!idsASupprimer.includes(a.id));
+  autoSave();
+  closeModal();
+  render();
+  afficherIndicateur(`✅ ${idsASupprimer.length} fiche(s) en doublon supprimée(s)`);
+}
+
 
 function openImportModal(){
   const m = document.getElementById('modal');
