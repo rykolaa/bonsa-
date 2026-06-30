@@ -5510,7 +5510,7 @@ function openPotModal(id, fromRemp=false){
     <div class="form-section">Identification</div>
     <div class="form-row">
       <div class="fg"><label>Nom / description *</label><input id="p-nom" value="${isEdit?p.nom:''}" placeholder="Ex: Ovale Tokoname bleu"></div>
-      <div class="fg"><label>Forme</label><select id="p-forme"><option value="">— Choisir —</option>${FORMES_POT.map(f=>`<option value="${f}" ${isEdit&&(p.forme||'').trim()===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div class="fg"><label>Forme</label><select id="p-forme" onchange="calcVolumePot()"><option value="">— Choisir —</option>${FORMES_POT.map(f=>`<option value="${f}" ${isEdit&&(p.forme||'').trim()===f?'selected':''}>${f}</option>`).join('')}</select></div>
     </div>
     <div class="form-row">
       <div class="fg"><label>Matière</label><select id="p-mat"><option value="">— Choisir —</option>${MATIERES_POT.map(f=>`<option value="${f}" ${isEdit&&(p.matiere||'').trim()===f?'selected':''}>${f}</option>`).join('')}</select></div>
@@ -5531,7 +5531,7 @@ function openPotModal(id, fromRemp=false){
     <div class="form-row">
       <div class="fg" style="display:flex;align-items:center;gap:10px">
         <label style="margin:0">Volume intérieur</label>
-        <div id="p-volume-display" style="font-size:14px;font-weight:600;color:var(--moss);padding:6px 12px;background:var(--moss-light);border-radius:6px">${isEdit&&p.int_long&&p.int_larg&&p.int_haut?((p.int_long*p.int_larg*p.int_haut)/1000).toFixed(2)+' L':'— L'}</div>
+        <div id="p-volume-display" style="font-size:14px;font-weight:600;color:var(--moss);padding:6px 12px;background:var(--moss-light);border-radius:6px">${isEdit&&p.int_long&&p.int_larg&&p.int_haut?((p.int_long*p.int_larg*p.int_haut*facteurVolumeForme(p.forme))/1000).toFixed(2)+' L':'— L'}</div>
         <span style="font-size:12px;color:var(--stone)">calculé automatiquement</span>
       </div>
       <div class="fg"><label>Volume saisi (L)</label><input id="p-vol" type="number" step="0.1" min="0" value="${isEdit?p.volume_litres||'':''}" placeholder="Saisie manuelle"></div>
@@ -5630,14 +5630,23 @@ function reconstruireCollectionsPots(){
   db.collections_pots.sort((a,b)=>a.localeCompare(b));
 }
 
+function facteurVolumeForme(forme){
+  // Coefficient de remplissage du volume intérieur selon la forme du pot,
+  // par rapport au rectangle/parallélépipède englobant (long × larg × haut).
+  if(forme==='Ovale' || forme==='Rond') return Math.PI/4; // ≈ 0.785, formule de l'ellipse/cercle inscrit
+  return 1; // Rectangle, Hexagonal, Carré, Cascade, Autre : approximation rectangulaire
+}
+
 function calcVolumePot(){
   const l = parseFloat(document.getElementById('p-il')?.value)||0;
   const w = parseFloat(document.getElementById('p-iw')?.value)||0;
   const h = parseFloat(document.getElementById('p-ih')?.value)||0;
+  const forme = document.getElementById('p-forme')?.value||'';
   const el = document.getElementById('p-volume-display');
   if(!el) return;
   if(l && w && h){
-    el.textContent = ((l*w*h)/1000).toFixed(2) + ' L';
+    const facteur = facteurVolumeForme(forme);
+    el.textContent = ((l*w*h*facteur)/1000).toFixed(2) + ' L';
     el.style.color = 'var(--moss)';
   } else {
     el.textContent = '— L';
@@ -5652,7 +5661,7 @@ function afficherVolumeRefPot(potIdStr){
   if(!id){ ref.textContent=''; return; }
   const pot = db.pots.find(p=>p.id===id);
   if(!pot){ ref.textContent=''; return; }
-  const vol = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut/1000 : null);
+  const vol = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut*facteurVolumeForme(pot.forme)/1000 : null);
   ref.textContent = vol ? '(pot : '+vol.toFixed(2)+' L)' : '';
 }
 
