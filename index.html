@@ -5837,7 +5837,12 @@ function afficherVolumeRefPot(potIdStr){
   const pot = db.pots.find(p=>p.id===id);
   if(!pot){ ref.textContent=''; return; }
   const vol = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut*facteurVolumeForme(pot.forme)/1000 : null);
-  ref.textContent = vol ? '(pot : '+vol.toFixed(2)+' L)' : '';
+  if(vol){
+    ref.textContent = '(pot : '+vol.toFixed(2)+' L)';
+    ref.style.color = 'var(--moss)';
+  } else {
+    ref.innerHTML = '<span style="color:var(--stone);font-weight:normal">— dimensions intérieures non renseignées <a href="#" onclick="event.preventDefault();closeModal();openPotModal('+id+')" style="color:var(--moss)">Compléter la fiche</a></span>';
+  }
 }
 
 window._potPhotosTmp=[];
