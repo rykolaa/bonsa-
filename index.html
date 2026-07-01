@@ -1094,6 +1094,137 @@ function confirmerValidationSoin(arbreId){
   afficherIndicateur(`✅ ${type} validé — ${a.nom}${!supprimer?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
 }
 
+function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
+  const today = new Date().toISOString().split('T')[0];
+  const freqDefaut = getSoinFreq(soinType);
+  const prochainDefaut = freqDefaut ? new Date(Date.now() + freqDefaut*86400000).toISOString().split('T')[0] : '';
+  const arbres = arbreIds.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+
+  const m = document.getElementById('modal');
+  m.innerHTML=`
+  <div class="modal-head">
+    <div class="modal-title">${TRAVAUX_ICONS[soinType]||'📅'} Valider en masse — ${soinType}</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div style="background:var(--moss-light);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+      Validation pour <strong>${arbres.length} arbre${arbres.length>1?'s':''}</strong> · Soin prévu le <strong>${fmtDate(soinDate)}</strong>
+    </div>
+    <div style="max-height:120px;overflow-y:auto;font-size:12px;color:var(--stone);margin-bottom:14px;background:var(--bg-2);border-radius:6px;padding:8px">
+      ${arbres.map(a=>`${getEmoji(a.espece)} ${a.nom}`).join(' · ')}
+    </div>
+    <input type="hidden" id="vm-soin-type" value="${esc(soinType)}">
+    <input type="hidden" id="vm-soin-date" value="${soinDate}">
+    <input type="hidden" id="vm-arbre-ids" value="${arbreIds.join(',')}">
+    <div class="form-row">
+      <div class="fg"><label>Date d'exécution</label><input id="vm-date" type="date" value="${today}"></div>
+      <div class="fg"><label>Type de soin réalisé</label><select id="vm-type">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row one"><div class="fg"><label>Notes (facultatif, appliquées à tous)</label><input id="vm-desc" placeholder="Ex: Biogold 1 pastille, bon état…"></div></div>
+    <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer">
+        <input type="checkbox" id="vm-reprogrammer" style="width:14px;height:14px" ${prochainDefaut?'checked':''} onchange="document.getElementById('vm-replanif-wrap').style.display=this.checked?'block':'none'">
+        Reprogrammer ce soin pour tous les arbres
+      </label>
+    </div>
+    <div id="vm-replanif-wrap" style="${prochainDefaut?'':'display:none'}">
+      <div class="form-row">
+        <div class="fg"><label>Prochain soin</label><input id="vm-pdate" type="date" value="${prochainDefaut}"></div>
+        <div class="fg"><label>Type</label><select id="vm-ptype">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        ${getTravaux().filter(t=>t.freq).slice(0,6).map(t=>
+          `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="
+            document.getElementById('vm-ptype').value='${esc(t.nom)}';
+            document.getElementById('vm-pdate').value=new Date(Date.now()+${t.freq}*86400000).toISOString().split('T')[0]
+          ">${t.emoji} +${t.freq}j</button>`
+        ).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="confirmerValidationEnMasse()">✓ Valider les ${arbres.length} arbres</button>
+  </div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+}
+
+function confirmerValidationEnMasse(){
+  const date     = document.getElementById('vm-date').value;
+  const type     = document.getElementById('vm-type').value;
+  const desc     = document.getElementById('vm-desc').value;
+  const origType = document.getElementById('vm-soin-type').value;
+  const origDate = document.getElementById('vm-soin-date').value;
+  const ids      = document.getElementById('vm-arbre-ids').value.split(',').map(Number);
+  const reprogrammer = document.getElementById('vm-reprogrammer')?.checked;
+  const pdate    = document.getElementById('vm-pdate')?.value||'';
+  const ptype    = document.getElementById('vm-ptype')?.value||type;
+
+  let count = 0;
+  ids.forEach(id=>{
+    const a = db.arbres.find(x=>x.id===id);
+    if(!a) return;
+    if(!a.travaux) a.travaux=[];
+    const coutDefaut = getSoinCoutPourArbre(origType, a);
+    a.travaux.unshift({date, type, desc, cout:coutDefaut, photosLinked:[]});
+    if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
+    a.soins_planifies = a.soins_planifies.filter(s=>!(s.type===origType&&s.date===origDate));
+    if(reprogrammer && pdate) a.soins_planifies.push({type:ptype, date:pdate, notes:''});
+    const next = a.soins_planifies.slice().sort((x,y)=>x.date.localeCompare(y.date))[0];
+    a.prochain_soin = next?.date||'';
+    a.type_soin     = next?.type||'';
+    count++;
+  });
+
+  autoSave();
+  closeModal();
+  render();
+  afficherIndicateur(`✅ ${type} validé pour ${count} arbre${count>1?'s':''}${reprogrammer&&pdate?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
+}
+
+function ouvrirValidationEnMasseDepuisCollection(){
+  const ids = [...etiqSel];
+  if(!ids.length){ afficherIndicateur('⚠️ Aucun arbre sélectionné'); return; }
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+
+  // Trouver les soins planifiés communs (même type+date) parmi les arbres sélectionnés
+  const parGroupe = {};
+  arbres.forEach(a=>{
+    (a.soins_planifies||[]).forEach(s=>{
+      const k = s.type+'||'+s.date;
+      (parGroupe[k]=parGroupe[k]||{type:s.type,date:s.date,ids:[]}).ids.push(a.id);
+    });
+  });
+  const groupes = Object.values(parGroupe).sort((a,b)=>a.date.localeCompare(b.date));
+
+  const today = new Date().toISOString().split('T')[0];
+  const m = document.getElementById('modal');
+  m.innerHTML=`
+  <div class="modal-head">
+    <div class="modal-title">📅 Valider un soin planifié — ${arbres.length} arbre${arbres.length>1?'s':''}</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    ${!groupes.length
+      ? `<div style="color:var(--stone);font-size:13px;padding:16px 0">Aucun soin planifié commun trouvé pour les arbres sélectionnés.</div>`
+      : `<p style="font-size:13px;color:var(--stone);margin-bottom:14px">Soins planifiés trouvés parmi la sélection — clique sur un groupe pour le valider :</p>
+        ${groupes.map(g=>`
+          <div class="obs-item" style="cursor:pointer;border-left:3px solid ${g.date<today?'var(--rust)':'var(--moss)'}" onclick="closeModal();ouvrirValidationEnMasse(${JSON.stringify(g.type)},${JSON.stringify(g.date)},${JSON.stringify(g.ids)})">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">${TRAVAUX_ICONS[g.type]||'📅'}</span>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:13px">${g.type}</div>
+                <div style="font-size:11px;color:var(--stone)">${fmtDate(g.date)} · ${g.ids.length} arbre${g.ids.length>1?'s':''}</div>
+              </div>
+              <span style="font-size:20px;color:var(--moss)">›</span>
+            </div>
+          </div>`).join('')}`
+    }
+  </div>
+  <div class="modal-footer"><button class="btn" onclick="closeModal()">Fermer</button></div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+}
+
 function ouvrirGestionSoinsDepasses(event){
   if(event) event.stopPropagation();
   const today = new Date().toISOString().split('T')[0];
@@ -1393,6 +1524,7 @@ function renderCollection(c){
         <span style="font-size:14px">${_allSel?'☑':'☐'}</span> ${_allSel?'Tout désélect.':'Tout sélect.'}
       </button>
       ${etiqSel.size>0?`<button onclick="ouvrirSoinGroupe()" style="font-size:12px;padding:4px 12px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">✅ Soin groupé <strong>(${etiqSel.size})</strong></button>`:''}
+      ${etiqSel.size>0?`<button onclick="ouvrirValidationEnMasseDepuisCollection()" style="font-size:12px;padding:4px 12px;background:#7a4ca0;color:#fff;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">📅 Valider soin planifié <strong>(${etiqSel.size})</strong></button>`:''}
       ${etiqSel.size>0?`<button onclick="imprimerFichePDF([...etiqSel])" style="font-size:12px;padding:4px 12px;background:#e8f0ff;color:#1a4fa5;border:1px solid #b0c8f0;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">📄 PDF <strong>(${etiqSel.size})</strong></button>`:''}
       <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
         <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
@@ -2241,7 +2373,23 @@ function deleteTravail(arbreId, date, type){
 
 function renderSante(c){
   const allObs = db.arbres.flatMap(a=>(a.sante_obs||[]).map(o=>({...o,arbre:a.nom,arbreId:a.id,emoji:getEmoji(a.espece)}))).sort((a,b)=>new Date(b.date)-new Date(a.date));
-  c.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+  // Regrouper les soins planifiés par type + date
+  const today = new Date().toISOString().split('T')[0];
+  const tousLesSoins = [];
+  db.arbres.forEach(a=>{
+    (a.soins_planifies||[]).forEach(s=>{
+      tousLesSoins.push({...s, arbreId:a.id, arbreNom:a.nom, emoji:getEmoji(a.espece), enRetard: s.date < today});
+    });
+  });
+  const parGroupe = {};
+  tousLesSoins.forEach(s=>{
+    const k = s.type+'||'+s.date;
+    (parGroupe[k]=parGroupe[k]||{type:s.type,date:s.date,soins:[],enRetard:s.enRetard}).soins.push(s);
+  });
+  const groupes = Object.values(parGroupe).sort((a,b)=>a.date.localeCompare(b.date));
+
+  c.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
     <div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="font-family:var(--ff-display);font-size:20px;font-weight:400">État sanitaire</div>
@@ -2272,6 +2420,33 @@ function renderSante(c){
         ${o.traitement?`<div style="font-size:12px;color:var(--moss)">💊 ${o.traitement}</div>`:''}
       </div>`).join('')}
       ${!allObs.length?'<div class="empty" style="padding:30px 0"><div class="empty-icon">🌡️</div><div>Aucune observation enregistrée</div></div>':''}
+    </div>
+    <div>
+      <div style="font-family:var(--ff-display);font-size:20px;font-weight:400;margin-bottom:14px">Soins planifiés</div>
+      ${!groupes.length?'<div class="empty" style="padding:30px 0"><div class="empty-icon">📅</div><div>Aucun soin planifié</div></div>':''}
+      ${groupes.map((g,gi)=>{
+        const icon = TRAVAUX_ICONS[g.type]||'📅';
+        const enRetard = g.date < today;
+        const ids = g.soins.map(s=>s.arbreId);
+        return `<div class="obs-item" style="border-left:3px solid ${enRetard?'var(--rust)':'var(--moss)'}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:18px">${icon}</span>
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:13px">${g.type}</div>
+              <div style="font-size:11px;color:${enRetard?'var(--rust)':'var(--stone)'}">
+                ${enRetard?'⚠️ En retard — ':'📅 '}${fmtDate(g.date)}
+              </div>
+            </div>
+            <span style="font-size:12px;color:var(--stone);background:var(--bg-2);padding:2px 7px;border-radius:10px">${g.soins.length} arbre${g.soins.length>1?'s':''}</span>
+          </div>
+          <div style="font-size:11px;color:var(--stone);margin-bottom:8px;max-height:48px;overflow:hidden">
+            ${g.soins.slice(0,5).map(s=>`${s.emoji} ${s.arbreNom}`).join(' · ')}${g.soins.length>5?` · +${g.soins.length-5} autres`:''}
+          </div>
+          <button class="btn btn-primary" style="width:100%;font-size:12px;padding:5px" onclick='ouvrirValidationEnMasse(${JSON.stringify(g.type)}, ${JSON.stringify(g.date)}, ${JSON.stringify(ids)})'>
+            ✓ Valider les ${g.soins.length} arbres
+          </button>
+        </div>`;
+      }).join('')}
     </div>
   </div>`;
 }
