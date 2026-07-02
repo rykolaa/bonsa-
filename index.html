@@ -3218,10 +3218,15 @@ function toggleRempotageFields(){
     // Gérer saisie libre pot
     const potSel = document.getElementById('f-remp-pot');
     const melSel = document.getElementById('f-remp-mel');
-    if(potSel) potSel.onchange = function(){
-      const libreWrap = document.getElementById('f-remp-pot-libre-wrap');
-      if(libreWrap) libreWrap.style.display = (this.value==='__libre') ? 'block' : 'none';
-    };
+    if(potSel){
+      potSel.onchange = function(){
+        const libreWrap = document.getElementById('f-remp-pot-libre-wrap');
+        if(libreWrap) libreWrap.style.display = (this.value==='__libre') ? 'block' : 'none';
+        afficherVolumeRefPot(this.value);
+      };
+      // Afficher le volume du pot déjà sélectionné au chargement
+      if(potSel.value) afficherVolumeRefPot(potSel.value);
+    }
     if(melSel) melSel.onchange = function(){
       const libreWrap = document.getElementById('f-remp-mel-libre-wrap');
       if(libreWrap) libreWrap.style.display = (this.value==='__libre') ? 'block' : 'none';
@@ -5493,12 +5498,13 @@ function openRempotageModal(id){
     </div>
     <div class="form-section">Pot utilisé</div>
     <div class="form-row">
-      <div class="fg"><label>Pot</label><select id="r-pot">
+      <div class="fg"><label>Pot</label><select id="r-pot" onchange="afficherVolumeRefRemp(this.value)">
         <option value="">— Choisir —</option>
         ${db.pots.map(p=>`<option value="${p.id}" ${isEdit&&r.pot_id===p.id?'selected':''}>${p.nom} (${p.long}×${p.larg}×${p.haut}cm)</option>`).join('')}
         <option value="nouveau">＋ Créer un nouveau pot</option>
       </select></div>
     </div>
+    <div id="r-vol-ref" style="font-size:12px;margin:-6px 0 8px;padding-left:2px"></div>
     <div class="form-section">Substrat</div>
     <div class="form-row">
       <div class="fg"><label>Mélange utilisé</label><select id="r-mel" onchange="updateCoutSubstrat()">
@@ -5528,6 +5534,11 @@ function openRempotageModal(id){
   window._rempMediaTmp = isEdit?{photos:[...(r.photos||[])],videos:[...(r.videos||[])]}:{photos:[],videos:[]};
   document.getElementById('modal-overlay').style.display='flex';
   if(isEdit) updateCoutSubstrat();
+  // Afficher volume du pot pré-sélectionné
+  setTimeout(()=>{
+    const potSel = document.getElementById('r-pot');
+    if(potSel && potSel.value) afficherVolumeRefRemp(potSel.value);
+  }, 0);
   // Si pot=nouveau, ouvrir modal pot
   document.getElementById('r-pot').addEventListener('change',function(){if(this.value==='nouveau'){closeModal();openPotModal(0,true);}});
 }
@@ -5826,6 +5837,21 @@ function calcVolumePot(){
   } else {
     el.textContent = '— L';
     el.style.color = 'var(--stone)';
+  }
+}
+
+function afficherVolumeRefRemp(potIdStr){
+  const ref = document.getElementById('r-vol-ref');
+  if(!ref) return;
+  const id = parseInt(potIdStr);
+  if(!id){ ref.innerHTML=''; return; }
+  const pot = db.pots.find(p=>p.id===id);
+  if(!pot){ ref.innerHTML=''; return; }
+  const vol = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut*facteurVolumeForme(pot.forme)/1000 : null);
+  if(vol){
+    ref.innerHTML = `<span style="color:var(--moss);font-weight:600">📦 Volume intérieur du pot : ${vol.toFixed(2)} L</span>`;
+  } else {
+    ref.innerHTML = `<span style="color:var(--stone)">Dimensions intérieures non renseignées — <a href="#" onclick="event.preventDefault();closeModal();openPotModal(${id})" style="color:var(--moss)">Compléter la fiche</a></span>`;
   }
 }
 
