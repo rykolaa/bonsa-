@@ -2604,6 +2604,7 @@ function openDetail(id){
       <div class="dp-head-species">${esc(a.espece)}${getLatin(a.espece, a)?` <em>— ${getLatin(a.espece, a)}</em>`:''}${a.cultivar?' · cv. <em>'+esc(a.cultivar)+'</em>':''}</div>
     </div>
     <div style="display:flex;gap:6px;align-items:center">
+      ${(a.photos||[]).filter(p=>!p.dataUrl).length > 0 ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#f5e6e6;color:var(--rust);border:1px solid #e0b0b0" onclick="nettoyerPhotosFantomes(${a.id})" title="Supprimer les photos sans image">🧹 ${(a.photos||[]).filter(p=>!p.dataUrl).length} fantôme${(a.photos||[]).filter(p=>!p.dataUrl).length>1?'s':''}</button>` : ''}
       <button class="btn btn-icon" onclick="openEditModal(${a.id})" title="Modifier">✏️</button>
       <button class="btn btn-icon" onclick="openTravailModal(${a.id})" title="Ajouter travail">✂️</button>
       <button class="btn btn-icon" onclick="openPhotoModal(${a.id})" title="Ajouter photo">📷</button>
