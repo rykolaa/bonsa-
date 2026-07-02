@@ -2336,6 +2336,21 @@ function deletePhoto(arbreId, photoId){
   autoSave();
 }
 
+function nettoyerPhotosFantomes(arbreId){
+  const a = db.arbres.find(x=>x.id===arbreId);
+  if(!a) return;
+  const fantomes = (a.photos||[]).filter(p=>!p.dataUrl);
+  if(!fantomes.length){ afficherIndicateur('Aucune photo fantôme trouvée'); return; }
+  if(!confirm(`Supprimer définitivement ${fantomes.length} photo${fantomes.length>1?'s':''} fantôme${fantomes.length>1?'s':''} (sans image) pour "${a.nom}" ?`)) return;
+  fantomes.forEach(p=>{
+    a.photos = a.photos.filter(x=>x.id!==p.id);
+    idbSupprimerPhoto(arbreId, p.id);
+  });
+  autoSave();
+  openDetail(arbreId);
+  afficherIndicateur(`🧹 ${fantomes.length} photo${fantomes.length>1?'s':''} fantôme${fantomes.length>1?'s':''} supprimée${fantomes.length>1?'s':''}`);
+}
+
 function deletePhotoDetail(arbreId, photoId){
   if(!confirm('Supprimer cette photo ?')) return;
   const a = db.arbres.find(x=>x.id===parseInt(arbreId));
@@ -2624,7 +2639,12 @@ function openDetail(id){
              </div>`
         ).join('')}
         <div class="dp-strip-add" onclick="openPhotoModal(${a.id})" title="Ajouter une photo">＋</div>
-      </div>` : `
+      </div>
+      ${photos.filter(p=>!p.dataUrl).length > 0 ? `
+      <button onclick="nettoyerPhotosFantomes(${a.id})" style="margin:4px 6px 0;font-size:11px;padding:3px 10px;background:#f5e6e6;color:var(--rust);border:1px solid #e0b0b0;border-radius:6px;cursor:pointer;width:calc(100% - 12px)">
+        🧹 Supprimer les ${photos.filter(p=>!p.dataUrl).length} photo${photos.filter(p=>!p.dataUrl).length>1?'s':''} fantôme${photos.filter(p=>!p.dataUrl).length>1?'s':''}
+      </button>` : ''}
+      ` : `
       <div style="padding:8px 6px">
         <div class="dp-strip-add" onclick="openPhotoModal(${a.id})" title="Ajouter une photo">＋ Photo</div>
       </div>`}
