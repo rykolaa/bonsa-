@@ -345,6 +345,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <button class="btn-add" onclick="openAddModal()">＋ Nouvel arbre</button>
     <button class="btn-add" style="background:var(--rust);gap:5px" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
     <button class="btn-add" style="background:#7a4ca0;gap:5px" onclick="detecterDoublonsArbres()" title="Détecter les fiches arbres dupliquées (même numéro)">🔍 Doublons</button>
+    <button class="btn-add" style="background:#8b4a2f;gap:5px" onclick="nettoyerTousFantomes()" title="Supprimer toutes les photos sans image dans toute la collection">🧹 Fantômes</button>
     <div style="display:flex;gap:6px;align-items:center;margin-left:4px;padding-left:10px;border-left:1px solid rgba(255,255,255,.15)">
       <button class="btn-add" style="background:#185fa5" onclick="sauvegarderJSON()" title="Sauvegarder les données (sans photos)">💾 Sauvegarder</button>
       <button class="btn-add" style="background:#2d6e28;font-size:11px;padding:5px 10px" onclick="ouvrirExportModal()" title="Exporter avec photos">📦 Export photos</button>
@@ -2349,6 +2350,27 @@ function nettoyerPhotosFantomes(arbreId){
   autoSave();
   openDetail(arbreId);
   afficherIndicateur(`🧹 ${fantomes.length} photo${fantomes.length>1?'s':''} fantôme${fantomes.length>1?'s':''} supprimée${fantomes.length>1?'s':''}`);
+}
+
+function nettoyerTousFantomes(){
+  let totalFantomes = 0;
+  let arbresAffectes = 0;
+  db.arbres.forEach(a=>{
+    const nb = (a.photos||[]).filter(p=>!p.dataUrl).length;
+    if(nb>0){ totalFantomes+=nb; arbresAffectes++; }
+  });
+  if(!totalFantomes){ afficherIndicateur('✅ Aucune photo fantôme dans la collection'); return; }
+  if(!confirm(`Supprimer ${totalFantomes} photo${totalFantomes>1?'s':''} fantôme${totalFantomes>1?'s':''} sur ${arbresAffectes} arbre${arbresAffectes>1?'s':''} ?`)) return;
+  db.arbres.forEach(a=>{
+    const fantomes = (a.photos||[]).filter(p=>!p.dataUrl);
+    fantomes.forEach(p=>{
+      a.photos = a.photos.filter(x=>x.id!==p.id);
+      idbSupprimerPhoto(a.id, p.id);
+    });
+  });
+  autoSave();
+  render();
+  afficherIndicateur(`🧹 ${totalFantomes} photo${totalFantomes>1?'s':''} fantôme${totalFantomes>1?'s':''} supprimée${totalFantomes>1?'s':''} sur ${arbresAffectes} arbre${arbresAffectes>1?'s':''}`);
 }
 
 function deletePhotoDetail(arbreId, photoId){
