@@ -4373,8 +4373,15 @@ function renderDepenses(c){
   const dateFrom = state.depDateFrom || yearStart;
   const dateTo   = state.depDateTo   || today;
 
+  // Normalise une date pot en ISO (gère DD.MM.YYYY et YYYY-MM-DD)
+  const normDate = d => {
+    if(!d) return '';
+    if(/^\d{2}\.\d{2}\.\d{4}$/.test(d)) return d.split('.').reverse().join('-');
+    return d;
+  };
+
   // Calcul coût pots achetés dans la période
-  const potsAchetes = (db.pots||[]).filter(p=>p.date_acq && p.date_acq>=dateFrom && p.date_acq<=dateTo);
+  const potsAchetes = (db.pots||[]).filter(p=>{ const d=normDate(p.date_acq); return d && d>=dateFrom && d<=dateTo; });
   const totalPots = potsAchetes.reduce((s,p)=>s+(p.prix||0),0);
 
   // Substrats : sac_prix × sacs_total — pas de date d'achat, on affiche le total stock
