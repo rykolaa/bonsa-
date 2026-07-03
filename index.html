@@ -30,6 +30,8 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .nav-tab{padding:6px 16px;border:none;background:transparent;color:rgba(247,244,238,.55);font-family:var(--ff-body);font-size:13px;cursor:pointer;border-radius:6px;transition:.15s;display:flex;align-items:center;gap:6px}
 .nav-tab:hover{background:rgba(255,255,255,.08);color:var(--parchment)}
 .nav-tab.active{background:var(--moss);color:var(--parchment)}
+.topbar-dd-btn{display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;color:var(--ink)}
+.topbar-dd-btn:hover{background:#f5f0fa}
 .btn-add{margin-left:8px;padding:7px 16px;background:var(--moss-mid);border:none;border-radius:var(--radius);color:#fff;font-family:var(--ff-body);font-size:13px;font-weight:500;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:6px}
 .btn-add:hover{background:var(--moss)}
 /* MOBILE MENU */
@@ -343,26 +345,31 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
       <button class="nav-tab" id="tab-stats" onclick="setPage('stats')">📊 Statistiques</button>
     </div>
     <button class="btn-add" onclick="openAddModal()">＋ Nouvel arbre</button>
-    <button class="btn-add" style="background:var(--rust);gap:5px" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
-    <div style="position:relative;display:inline-block" id="outils-menu-wrap">
-      <button class="btn-add" style="background:#7a4ca0;gap:5px" onclick="document.getElementById('outils-dropdown').style.display=document.getElementById('outils-dropdown').style.display==='block'?'none':'block'" title="Outils de maintenance">🛠️ Outils ▾</button>
-      <div id="outils-dropdown" style="display:none;position:absolute;top:110%;left:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;min-width:200px;padding:6px 0">
-        <button style="display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px" onmouseenter="this.style.background='#f5f0fa'" onmouseleave="this.style.background='none'" onclick="document.getElementById('outils-dropdown').style.display='none';detecterDoublonsArbres()">🔍 Détecter les doublons</button>
-        <button style="display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px" onmouseenter="this.style.background='#f5f0fa'" onmouseleave="this.style.background='none'" onclick="document.getElementById('outils-dropdown').style.display='none';nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
+    <button class="btn-add" style="background:var(--rust)" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
+
+    <div style="position:relative;display:inline-block">
+      <button class="btn-add" style="background:#185fa5" onclick="toggleDropdown('donnees-dd')" title="Sauvegarder, charger, synchroniser">💾 Données ▾</button>
+      <div id="donnees-dd" style="display:none;position:absolute;top:110%;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;min-width:200px;padding:6px 0">
+        <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');sauvegarderJSON()">💾 Sauvegarder</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');ouvrirExportModal()">📦 Export photos</button>
+        <label class="topbar-dd-btn" style="cursor:pointer">📂 Charger<input type="file" accept=".json" multiple style="display:none" onchange="toggleDropdown('donnees-dd');chargerJSON(this)"></label>
+        <hr style="margin:4px 0;border:none;border-top:1px solid var(--border)">
+        <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');ouvrirSyncModal()">🔄 Sync</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');ouvrirVersions()">🕐 Versions</button>
       </div>
     </div>
-    <div style="display:flex;gap:6px;align-items:center;margin-left:4px;padding-left:10px;border-left:1px solid rgba(255,255,255,.15)">
-      <button class="btn-add" style="background:#185fa5" onclick="sauvegarderJSON()" title="Sauvegarder les données (sans photos)">💾 Sauvegarder</button>
-      <button class="btn-add" style="background:#2d6e28;font-size:11px;padding:5px 10px" onclick="ouvrirExportModal()" title="Exporter avec photos">📦 Export photos</button>
-      <label class="btn-add" style="background:#6b6b5e;cursor:pointer" title="Charger une sauvegarde — accepte plusieurs fichiers (lots)">
-        📂 Charger
-        <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this)">
-      </label>
-      <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
-      <button class="btn-add" style="background:#475569;font-size:11px;padding:5px 10px" onclick="ouvrirVersions()" title="Restaurer une sauvegarde automatique">🕐 Versions</button>
-      <button class="btn-add" style="background:#b45309;font-size:11px;padding:5px 10px" onclick="repairerPhotos()" title="Corriger l'orientation de toutes les photos (rotation EXIF)">🔃 Orienter photos</button>
-      <label class="btn-add" style="background:#1d4ed8;font-size:11px;padding:5px 10px;cursor:pointer" title="Réimporter des photos depuis des fichiers lots JSON">📥 Import photos<input type="file" accept=".json" multiple style="display:none" onchange="importerPhotosLots(this)"></label>
+
+    <div style="position:relative;display:inline-block">
+      <button class="btn-add" style="background:#7a4ca0" onclick="toggleDropdown('outils-dd')" title="Outils de maintenance">🛠️ Outils ▾</button>
+      <div id="outils-dd" style="display:none;position:absolute;top:110%;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;min-width:220px;padding:6px 0">
+        <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');detecterDoublonsArbres()">🔍 Détecter les doublons</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');repairerPhotos()">🔃 Orienter photos</button>
+        <label class="topbar-dd-btn" style="cursor:pointer">📥 Import photos<input type="file" accept=".json" multiple style="display:none" onchange="toggleDropdown('outils-dd');importerPhotosLots(this)"></label>
+      </div>
     </div>
+
+    <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
     <!-- Bouton menu mobile -->
     <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileMenu()" title="Menu">☰</button>
@@ -4212,6 +4219,20 @@ function majChampsOrigine(origine){
   document.getElementById('f-bouture-row').style.display = origine==='Bouture' ? 'flex' : 'none';
   document.getElementById('f-marcotte-row').style.display = origine==='Marcotte' ? 'flex' : 'none';
 }
+
+function toggleDropdown(id){
+  const ids = ['donnees-dd','outils-dd'];
+  ids.forEach(i=>{ if(i!==id) { const el=document.getElementById(i); if(el) el.style.display='none'; } });
+  const el = document.getElementById(id);
+  if(el) el.style.display = el.style.display==='block'?'none':'block';
+}
+// Fermer les dropdowns au clic extérieur
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#donnees-dd') && !e.target.closest('[onclick*="donnees-dd"]'))
+    { const el=document.getElementById('donnees-dd'); if(el) el.style.display='none'; }
+  if(!e.target.closest('#outils-dd') && !e.target.closest('[onclick*="outils-dd"]'))
+    { const el=document.getElementById('outils-dd'); if(el) el.style.display='none'; }
+});
 
 function toggleMobileMenu(){
   const d=document.getElementById('mobile-dropdown');
