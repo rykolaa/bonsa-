@@ -344,8 +344,13 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     </div>
     <button class="btn-add" onclick="openAddModal()">＋ Nouvel arbre</button>
     <button class="btn-add" style="background:var(--rust);gap:5px" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
-    <button class="btn-add" style="background:#7a4ca0;gap:5px" onclick="detecterDoublonsArbres()" title="Détecter les fiches arbres dupliquées (même numéro)">🔍 Doublons</button>
-    <button class="btn-add" style="background:#8b4a2f;gap:5px" onclick="nettoyerTousFantomes()" title="Supprimer toutes les photos sans image dans toute la collection">🧹 Fantômes</button>
+    <div style="position:relative;display:inline-block" id="outils-menu-wrap">
+      <button class="btn-add" style="background:#7a4ca0;gap:5px" onclick="document.getElementById('outils-dropdown').style.display=document.getElementById('outils-dropdown').style.display==='block'?'none':'block'" title="Outils de maintenance">🛠️ Outils ▾</button>
+      <div id="outils-dropdown" style="display:none;position:absolute;top:110%;left:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;min-width:200px;padding:6px 0">
+        <button style="display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px" onmouseenter="this.style.background='#f5f0fa'" onmouseleave="this.style.background='none'" onclick="document.getElementById('outils-dropdown').style.display='none';detecterDoublonsArbres()">🔍 Détecter les doublons</button>
+        <button style="display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px" onmouseenter="this.style.background='#f5f0fa'" onmouseleave="this.style.background='none'" onclick="document.getElementById('outils-dropdown').style.display='none';nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
+      </div>
+    </div>
     <div style="display:flex;gap:6px;align-items:center;margin-left:4px;padding-left:10px;border-left:1px solid rgba(255,255,255,.15)">
       <button class="btn-add" style="background:#185fa5" onclick="sauvegarderJSON()" title="Sauvegarder les données (sans photos)">💾 Sauvegarder</button>
       <button class="btn-add" style="background:#2d6e28;font-size:11px;padding:5px 10px" onclick="ouvrirExportModal()" title="Exporter avec photos">📦 Export photos</button>
@@ -3471,39 +3476,79 @@ function detecterDoublonsArbres(){
     if(!n) return;
     (parNum[n]=parNum[n]||[]).push(a);
   });
-  const groupes = Object.entries(parNum).filter(([n,arr])=>arr.length>1);
-  if(!groupes.length){
+
+  // Séparer vrais doublons et groupes à renuméroter (même num, noms différents)
+  const vraisDoublons = [];
+  const aRenumdroter = [];
+  Object.entries(parNum).filter(([n,arr])=>arr.length>1).forEach(([n,arr])=>{
+    // Si tous les noms sont identiques → vrais doublons
+    const noms = [...new Set(arr.map(a=>a.nom.trim()))];
+    if(noms.length===1) vraisDoublons.push([n,arr]);
+    else aRenumdroter.push([n,arr]);
+  });
+
+  if(!vraisDoublons.length && !aRenumdroter.length){
     afficherIndicateur('✅ Aucun doublon détecté (par numéro de fiche)');
     return;
   }
 
-  const html = `<div class="dp-head"><div class="dp-head-nom">🔍 ${groupes.length} numéro${groupes.length>1?'s':''} en doublon</div>
+  const m = document.getElementById('modal');
+  m.innerHTML=`<div class="dp-head"><div class="dp-head-nom">🔍 Analyse des doublons</div>
     <button class="btn" onclick="closeModal()">✕</button></div>
     <div style="padding:20px;max-height:70vh;overflow-y:auto">
-    <p style="margin-bottom:14px;color:var(--stone);font-size:13px">Pour chaque groupe, la fiche la plus complète (photos, travaux, champs remplis) sera <strong>conservée</strong>, les autres seront supprimées. Vérifie avant de confirmer.</p>
-    ${groupes.map(([num,arr],gi)=>{
+
+    ${aRenumdroter.length?`
+    <div style="background:#fdf6e3;border:1px solid var(--gold);border-radius:8px;padding:12px 16px;margin-bottom:16px">
+      <div style="font-weight:600;margin-bottom:6px">📋 ${aRenumdroter.length} groupe${aRenumdroter.length>1?'s':''} à renuméroter (boutures / arbres liés)</div>
+      <p style="font-size:12px;color:var(--stone);margin-bottom:10px">Ces arbres partagent un numéro mais ont des noms différents. Ils seront renumérotés automatiquement (ex: BOUT_006 → BOUT_006-1, BOUT_006-2…)</p>
+      ${aRenumdroter.map(([num,arr])=>`
+        <div style="font-size:12px;margin-bottom:4px">
+          <strong>${num}</strong> : ${arr.map(a=>a.nom).join(', ')}
+        </div>`).join('')}
+      <button class="btn btn-primary" style="margin-top:10px;background:var(--gold-dark,#8a6d1d)" onclick='renumdroterGroupes(${JSON.stringify(aRenumdroter.map(([n,arr])=>({num:n,ids:arr.map(a=>a.id)})))})'>
+        ✓ Renuméroter ces ${aRenumdroter.reduce((s,[n,a])=>s+a.length,0)} arbres
+      </button>
+    </div>`:''}
+
+    ${vraisDoublons.length?`
+    <div style="font-weight:600;margin-bottom:10px">🗑️ ${vraisDoublons.length} vrai${vraisDoublons.length>1?'s':''} doublon${vraisDoublons.length>1?'s':''} (même numéro + même nom)</div>
+    <p style="font-size:12px;color:var(--stone);margin-bottom:12px">La fiche la plus complète sera conservée, les autres supprimées.</p>
+    ${vraisDoublons.map(([num,arr])=>{
       const scored = arr.map(a=>({a,score:scoreCompletudeArbre(a)})).sort((x,y)=>y.score-x.score);
       const garder = scored[0];
       const aSupprimer = scored.slice(1);
       return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
-        <div style="font-weight:600;margin-bottom:8px">Numéro : ${num}</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div style="background:var(--moss-light);padding:8px;border-radius:6px;font-size:13px">
-            ✅ <strong>Conserver</strong> — ${garder.a.nom} (id ${garder.a.id}) · ${(garder.a.photos||[]).length} photos · ${(garder.a.travaux||[]).length} travaux · score ${garder.score}
-          </div>
-          ${aSupprimer.map(x=>`<div style="background:#f5e6e6;padding:8px;border-radius:6px;font-size:13px">
-            🗑️ <strong>Supprimer</strong> — ${x.a.nom} (id ${x.a.id}) · ${(x.a.photos||[]).length} photos · ${(x.a.travaux||[]).length} travaux · score ${x.score}
-          </div>`).join('')}
+        <div style="font-weight:600;margin-bottom:8px">${num}</div>
+        <div style="background:var(--moss-light);padding:8px;border-radius:6px;font-size:13px;margin-bottom:4px">
+          ✅ Conserver — ${garder.a.nom} (id ${garder.a.id}) · ${(garder.a.photos||[]).length} photos · score ${garder.score}
         </div>
+        ${aSupprimer.map(x=>`<div style="background:#f5e6e6;padding:8px;border-radius:6px;font-size:13px;margin-bottom:4px">
+          🗑️ Supprimer — ${x.a.nom} (id ${x.a.id}) · ${(x.a.photos||[]).length} photos · score ${x.score}
+        </div>`).join('')}
       </div>`;
     }).join('')}
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-primary" style="background:#7a4ca0" onclick='confirmerSuppressionDoublons(${JSON.stringify(groupes.map(([num,arr])=>{const scored=arr.map(a=>({id:a.id,score:scoreCompletudeArbre(a)})).sort((x,y)=>y.score-x.score);return scored.slice(1).map(x=>x.id);}).flat())})'>✓ Supprimer les ${groupes.reduce((s,[n,arr])=>s+arr.length-1,0)} doublons</button>
-    </div>
-  </div>`;
-  document.getElementById('modal').innerHTML = html;
+      <button class="btn btn-primary" style="background:#7a4ca0" onclick='confirmerSuppressionDoublons(${JSON.stringify(vraisDoublons.map(([num,arr])=>{const scored=arr.map(a=>({id:a.id,score:scoreCompletudeArbre(a)})).sort((x,y)=>y.score-x.score);return scored.slice(1).map(x=>x.id);}).flat())})'>
+        ✓ Supprimer les ${vraisDoublons.reduce((s,[n,a])=>s+a.length-1,0)} doublons
+      </button>
+    </div>`:''}
+
+    </div>`;
   document.getElementById('modal-overlay').style.display='flex';
+}
+
+function renumdroterGroupes(groupes){
+  groupes.forEach(({num, ids})=>{
+    ids.forEach((id, i)=>{
+      const a = db.arbres.find(x=>x.id===id);
+      if(a) a.num = num + '-' + (i+1);
+    });
+  });
+  autoSave();
+  closeModal();
+  render();
+  afficherIndicateur(`✅ ${groupes.reduce((s,g)=>s+g.ids.length,0)} arbres renumérotés`);
 }
 
 function confirmerSuppressionDoublons(idsASupprimer){
