@@ -348,7 +348,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <button class="btn-add" style="background:var(--rust)" onclick="openImportModal()" title="Importer des fiches existantes">📥 Importer</button>
 
     <div style="position:relative;display:inline-block">
-      <button class="btn-add" style="background:#185fa5" onclick="toggleDropdown('donnees-dd')" title="Sauvegarder, charger, synchroniser">💾 Données ▾</button>
+      <button class="btn-add" style="background:#185fa5" onclick="toggleDropdown('donnees-dd')">💾 Données ▾</button>
       <div id="donnees-dd" style="display:none;position:absolute;top:110%;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;min-width:200px;padding:6px 0">
         <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');sauvegarderJSON()">💾 Sauvegarder</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');ouvrirExportModal()">📦 Export photos</button>
@@ -360,7 +360,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     </div>
 
     <div style="position:relative;display:inline-block">
-      <button class="btn-add" style="background:#7a4ca0" onclick="toggleDropdown('outils-dd')" title="Outils de maintenance">🛠️ Outils ▾</button>
+      <button class="btn-add" style="background:#7a4ca0" onclick="toggleDropdown('outils-dd')">🛠️ Outils ▾</button>
       <div id="outils-dd" style="display:none;position:absolute;top:110%;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;min-width:220px;padding:6px 0">
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');detecterDoublonsArbres()">🔍 Détecter les doublons</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
@@ -369,7 +369,6 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
       </div>
     </div>
 
-    <button class="btn-add" style="background:#7c3aed" onclick="ouvrirSyncModal()" title="Synchroniser entre appareils">🔄 Sync</button>
     <div id="save-indicator" style="font-size:11px;color:rgba(247,244,238,.45);white-space:nowrap;display:none"></div>
     <!-- Bouton menu mobile -->
     <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileMenu()" title="Menu">☰</button>
