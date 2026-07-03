@@ -4468,14 +4468,16 @@ function renderRempotages(c){
 // ── POTS ───────────────────────────────────────────────────────────────────────
 function potCardHtml(p){
   const arbre = db.arbres.find(a=>a.id===p.arbre_id);
-  const cover = (p.photos||[]).find(x=>x.dataUrl);
+  const photos = (p.photos||[]).filter(x=>x.dataUrl);
+  const cover = photos[0];
   const selMode = !!state.potSelectMode;
   const checked = (state.potSelection||[]).includes(p.id);
   return`<div class="pot-card" style="position:relative" onclick="${selMode?`togglePotSelection(${p.id})`:`openPotModal(${p.id})`}">
     ${selMode?`<div style="position:absolute;top:8px;left:8px;z-index:2"><input type="checkbox" ${checked?'checked':''} onclick="event.stopPropagation();togglePotSelection(${p.id})" style="width:20px;height:20px;cursor:pointer;accent-color:var(--moss)"></div>`:''}
     <div class="pot-card-img">
-      ${cover?`<img src="${cover.dataUrl}" alt="${p.nom}">`:`<span style="font-size:44px">⬛</span>`}
+      ${cover?`<img src="${cover.dataUrl}" alt="${p.nom}" onclick="event.stopPropagation();ouvrirLightboxPot(${p.id},0)" style="cursor:zoom-in">`:`<span style="font-size:44px">⬛</span>`}
       <div style="position:absolute;top:8px;right:8px"><span class="pot-status-badge ${p.statut==='libre'?'pot-libre':p.statut==='cassé'?'pot-casse':p.statut==='vendu'?'pot-vendu':'pot-utilise'}">${p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':'En service'}</span></div>
+      ${photos.length>1?`<div style="position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.5);color:#fff;font-size:10px;padding:2px 6px;border-radius:8px">📷 ${photos.length}</div>`:''}
       ${!selMode?`<div style="position:absolute;bottom:6px;right:6px"><button class="btn" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,.9)" onclick="event.stopPropagation();dupliquerPot(${p.id})" title="Dupliquer ce pot">⧉ Dupliquer</button></div>`:''}
     </div>
     <div class="pot-card-body">
@@ -4486,6 +4488,26 @@ function potCardHtml(p){
       ${p.collection?`<div style="font-size:11px;color:var(--gold)">📦 ${p.collection}</div>`:''}
     </div>
   </div>`;
+}
+
+function ouvrirLightboxPot(potId, idx){
+  const p = db.pots.find(x=>x.id===potId);
+  if(!p) return;
+  const photos = (p.photos||[]).filter(x=>x.dataUrl);
+  if(!photos.length) return;
+  idx = Math.max(0, Math.min(idx, photos.length-1));
+  let lb = document.getElementById('lightbox-overlay');
+  if(!lb){ lb=document.createElement('div'); lb.id='lightbox-overlay'; lb.className='lightbox'; document.body.appendChild(lb); }
+  lb.onclick = e=>{ if(e.target===lb) closeLightbox(); };
+  lb.innerHTML=`
+    <div class="lightbox-inner"><img src="${photos[idx].dataUrl}" alt="${p.nom}"></div>
+    <div class="lightbox-caption">${p.nom} · Photo ${idx+1}/${photos.length}</div>
+    <div class="lightbox-nav">
+      ${photos.length>1?`<button class="btn" onclick="ouvrirLightboxPot(${potId},${idx-1<0?photos.length-1:idx-1})">‹ Préc.</button>`:''}
+      <button class="btn" onclick="closeLightbox()">✕ Fermer</button>
+      ${photos.length>1?`<button class="btn" onclick="ouvrirLightboxPot(${potId},${idx+1>=photos.length?0:idx+1})">Suiv. ›</button>`:''}
+    </div>`;
+  lb.style.display='flex';
 }
 
 function togglePotSelectMode(){
