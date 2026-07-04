@@ -2550,6 +2550,14 @@ function renderStats(c){
         <div style="width:${Math.round(a.total/arbresParCout[0].total*100)}%;background:var(--moss);height:6px;border-radius:4px"></div>
       </div>
     </div>`).join('')}
+    <div style="border-top:2px solid var(--border);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;font-weight:600;color:var(--ink)">Total ${coutsArbres.length} arbres</span>
+      <span style="font-size:15px;font-weight:700;color:var(--moss)">${fmtCHF(Math.round(totalInvesti*100)/100)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px">
+      <span style="font-size:11px;color:var(--stone)">Moyenne par arbre</span>
+      <span style="font-size:12px;color:var(--stone)">${fmtCHF(Math.round(totalInvesti/coutsArbres.length*100)/100)}</span>
+    </div>
   </div>` : ''}
   <div class="stats-grid">
     <div class="stats-card">
