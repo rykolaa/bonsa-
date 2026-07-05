@@ -521,7 +521,7 @@ function styleFr(s){ const f=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s)
 // Calcule le coût total investi dans un arbre
 // = prix achat + travaux (qui incluent déjà les produits) + pot actuel + substrats des rempotages
 function calculCoutArbre(a){
-  const prixAchat = a.prix || 0;
+  const prixAchat = (a.prix || 0) + (a.prix_recolte || 0);
   const coutTravaux = (a.travaux||[]).reduce((s,t)=>s+(t.cout||0), 0);
   // Pot actuel (dernier rempotage avec pot_id)
   const remps = (db.rempotages||[]).filter(r=>r.arbre_id===a.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -2790,6 +2790,7 @@ function openDetail(id){
       <div class="info-grid" style="gap:5px">
         <div class="info-block"><div class="info-block-label">Acquisition</div><div class="info-block-val" style="font-size:12px">${fmtDate(a.date_acq)}</div></div>
         <div class="info-block"><div class="info-block-label">Prix d'achat</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix)}</div></div>
+        ${a.origine==='Yamadori'&&a.prix_recolte?`<div class="info-block"><div class="info-block-label">Prix de récolte</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix_recolte)}</div></div>`:''}
         ${a.pepiniere?`<div class="info-block" style="grid-column:1/-1"><div class="info-block-label">Pépinière / Fournisseur</div><div class="info-block-val" style="font-size:12px">${a.pepiniere}</div></div>`:''}
         ${a.alt?`<div class="info-block"><div class="info-block-label">Altitude</div><div class="info-block-val" style="font-size:12px">${a.alt} m</div></div>`:''}
         ${a.gps?`<div class="info-block"><div class="info-block-label">GPS</div><div class="info-block-val" style="font-size:12px">${a.gps}</div></div>`:''}
@@ -2987,6 +2988,9 @@ function showArbreModal(a){
       <div class="fg"><label>Prix d'achat (CHF)</label><input id="f-prix" type="number" value="${isEdit?a.prix||0:0}"></div>
       <div class="fg"><label>Pépinière / Fournisseur</label><input id="f-pep" value="${isEdit?a.pepiniere||'':''}" placeholder="Nom et lieu"></div>
     </div>
+    <div class="form-row" id="f-prix-recolte-wrap" style="${isEdit&&a.origine==='Yamadori'||(!isEdit&&'')?' ':'display:none'}">
+      <div class="fg"><label>Prix de récolte (CHF) <span style="font-size:10px;color:var(--stone)">Yamadori</span></label><input id="f-prix-recolte" type="number" step="0.01" value="${isEdit?a.prix_recolte||0:0}"></div>
+    </div>
     <div class="form-row">
       <div class="fg"><label>Altitude collecte (m)</label><input id="f-alt" value="${isEdit?a.alt||'':''}" placeholder="Pour yamadori"></div>
       <div class="fg"><label>GPS</label><input id="f-gps" value="${isEdit?a.gps||'':''}" placeholder="Ex: 46.12N 7.05E"></div>
@@ -3129,6 +3133,7 @@ function saveArbre(id){
     origine:document.getElementById('f-ori').value,
     date_acq:document.getElementById('f-date').value,
     prix:parseFloat(document.getElementById('f-prix').value)||0,
+    prix_recolte:parseFloat(document.getElementById('f-prix-recolte')?.value)||0,
     pepiniere:document.getElementById('f-pep').value,
     alt:document.getElementById('f-alt').value,
     gps:document.getElementById('f-gps').value,
@@ -4229,6 +4234,8 @@ function majChampsOrigine(origine){
   document.getElementById('f-semis-row').style.display = origine==='Semis' ? 'flex' : 'none';
   document.getElementById('f-bouture-row').style.display = origine==='Bouture' ? 'flex' : 'none';
   document.getElementById('f-marcotte-row').style.display = origine==='Marcotte' ? 'flex' : 'none';
+  const wrap = document.getElementById('f-prix-recolte-wrap');
+  if(wrap) wrap.style.display = origine==='Yamadori' ? 'flex' : 'none';
 }
 
 function toggleDropdown(id){
@@ -8131,14 +8138,12 @@ function genererEtiquette(id){
 })();
 
 // Mettre à jour le token seulement, ne pas écraser sync_bin_id
-localStorage.setItem('gist_token','ghp_PewTY'+'T3gyOvlr'+'6lpGJ8Ns'+'1OsN0EIiV4S999U');
 if(!localStorage.getItem('sync_bin_id')) localStorage.setItem('sync_bin_id','3f80acb234982af8c41efc6cea8a1e5e');
 initialiser();
 
 // ── SYNCHRONISATION DROPBOX ───────────────────────────────────────────────────
-const DBX_TOKEN_DEFAULT = 'sl.u.AGgZRFO6QW5A74lF0IFc-ZlHg2fJJmH0hrVUw49TymP2rH5TtsdfgfssZwkLO8p8IEgWBnTLyftTrXIEw-eg4iRvKxipf8Og0aD8bYomPKBGjyA9Vtm3fF8Edf33MFR8tWk_A4cOohWYOF9DyAR2kezXHXd6Pw4nKS61EB7mwI4kTeicHaJQTY3yQQ_fYFG8pVSgab8tJV-XWEXwvWzdB3eokMcD15rJCdw_K91ce-F16bgwMh4KNpGceJW12J1HN9VcR3LiHE43PEVwc6SSaoA6M95tHqizV8F3r1iITo9A2fMf4hRZualDYgkWKVIg3HP28zeo5Y7polB4RN6J8cDcmzMj6r-aIb32VTwYDd5l3uR-O3umVBnbQj3NVUA4dG5O-b2Kcq1OF-dlcFsDd1wEqjjMLYbLAtxmbmujK2xzn6a6nvVlPpElSghenv4IhYKALFfmDfSMKeak-XN0I4GHCmwqjODkvHiMXlq53A9SbEaCoZNhm0gaUFVUV9q6086_zQW2q7dSF9bpYONWVqYbtjEQbrxhfVRDGTdIGMfD8boH1jjlbeWS68kNtwi5FaPi54XNjTVMI-smqrz65q9B_klVKRMLUj2Ro4_s14shsueTci1fddxfJojiQm4YNjEUt1ISBG6nDxZZ2fMSiK5cjpGtxGcG8OWDOZRX3FM4A8Zng4iSbaLafKl0UjLakVcky9Uogbw9jSYyOQ66EY54m7nkCONSWQc5uOXzCqwpJCC00twlrKkMf_Nc7sWXwK2tiMVxe95wBXZOiUKJS8F_WQb_qXHrwiZ2Mg7-uUFpXln-yw0Olo0IF7--CE9pshaZVA7dhk4Uta7AwtP9kN1DahD5VrfboXjmlm4law60e3C8HFUHlGLqBB3QoBTBkZ7o9MoDrFLpJbDRJfPLjJQjBIgc2iA4fuSGfLuDqO5LvrmX7taDzPemGs9Z5ZtBwJJeZjb0SQbWmfoTD7GXIwPN8FeE7S3O88taX-ZBPQ6ko2vsJyMpO-Mj4NZ_qiQK4hVxEuEWRK7MAGXdDb1N0Nxd3RPWPjRL8aaziD--XaeaBsACCpT7gbUNMJEW3BTxFxZt7bfTewZFjaF_k39-1aEVkXgaxjGNyNoxi_bpM_BIpGEDIYYad54fimTKVTFmiQG5V42s9_2d-phfDYoTlWtQI3wjVH1A29lklPGgR1uC18Uu-rWMwZKLBjl0NRoHDMoKq5PngomnVbCftpvuAS5EzKfLL9sahPAlzu3YGJY4Vr_0zuZTV3bw859MQCxvos47PeYRukrFYbFfwV__ahK8ZDvST0iFrAFUSdkVX6SlIA';
 const DBX_PATH = '/yugen_bonsai_sync.json';
-function getDbxToken(){ return localStorage.getItem('dbx_token') || DBX_TOKEN_DEFAULT; }
+function getDbxToken(){ return localStorage.getItem('dbx_token') || ''; }
 
 function ouvrirDropboxTokenModal(){
   document.getElementById('modal').innerHTML=`
@@ -8277,6 +8282,7 @@ function _buildSyncPayloadRaw(){
 function ouvrirSyncModal(){
   const binId  = localStorage.getItem('sync_bin_id')||'';
   const savedAt = localStorage.getItem('sync_saved_at')||'';
+  const token = localStorage.getItem('gist_token')||'';
   document.getElementById('modal').innerHTML=`
   <div class="modal-head">
     <div class="modal-title">🔄 Synchronisation entre appareils</div>
@@ -8286,6 +8292,19 @@ function ouvrirSyncModal(){
     <p style="font-size:13px;color:var(--stone);margin-bottom:16px;line-height:1.6">
       Envoyez vos données dans le cloud via GitHub Gist, puis récupérez-les sur n'importe quel appareil avec le <strong>code de sync</strong>.
     </p>
+
+    <!-- TOKEN GITHUB -->
+    <div style="background:${token?'#f0faf0':'#fff8e6'};border:1px solid ${token?'rgba(45,90,39,.2)':'#f0c040'};border-radius:10px;padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:${token?'var(--moss)':'#b45309'};margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">🔑 Token GitHub ${token?'✅ configuré':'⚠️ requis'}</div>
+      ${!token?`<p style="font-size:12px;color:var(--stone);margin-bottom:8px">Crée un token sur <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--moss)">github.com/settings/tokens</a> avec la permission <strong>gist</strong> uniquement.</p>`:''}
+      <div style="display:flex;gap:6px">
+        <input id="sync-token-input" type="password" placeholder="ghp_XXXXXXXXXXXX"
+          style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace"
+          value="${token}">
+        <button onclick="sauvegarderTokenGist()" style="padding:8px 12px;background:var(--moss);color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer">💾 Sauver</button>
+      </div>
+      <div style="font-size:10px;color:var(--stone);margin-top:6px">Stocké uniquement dans votre navigateur — jamais dans le code.</div>
+    </div>
 
     <!-- ENVOYER -->
     <div style="background:var(--moss-light);border:1px solid rgba(45,90,39,.2);border-radius:10px;padding:14px;margin-bottom:12px">
@@ -8320,6 +8339,14 @@ function ouvrirSyncModal(){
     <div id="sync-status" style="margin-top:10px;font-size:12px;color:var(--stone);text-align:center;min-height:18px"></div>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
+}
+
+function sauvegarderTokenGist(){
+  const t = document.getElementById('sync-token-input')?.value.trim();
+  if(!t){ afficherIndicateur('⚠️ Token vide'); return; }
+  localStorage.setItem('gist_token', t);
+  afficherIndicateur('✅ Token GitHub sauvegardé');
+  ouvrirSyncModal();
 }
 
 async function syncEnvoyer(){
