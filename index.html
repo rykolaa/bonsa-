@@ -8266,12 +8266,15 @@ function _buildSyncPayloadRaw(){
   const arbresLeger = db.arbres.map(a=>({
     ...a, photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
   }));
+  const potsLeger = (db.pots||[]).map(p=>({
+    ...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))
+  }));
   const raw = {
     version:5, savedAt:new Date().toISOString(),
     nextId:db.nextId, nextPotId:db.nextPotId||1,
     nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
-    pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
+    pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
     especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
