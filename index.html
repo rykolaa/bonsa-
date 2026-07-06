@@ -6575,8 +6575,12 @@ function dbToCleanObj(){
 function ouvrirExportModal(){
   const nbArbres = db.arbres.length;
   const nbPhotos = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
-  // Estimer la taille : ~250KB par photo en moyenne après compression
   const estMB = Math.round(nbPhotos * 250 / 1024 * 10) / 10;
+  const dernierExport = localStorage.getItem('dernier_export_photos_iso')||'';
+  const dernierExportDate = dernierExport ? new Date(dernierExport).toLocaleString('fr-CH') : 'jamais';
+  const nbNouvellesPhotos = dernierExport ? db.arbres.reduce((s,a)=>{
+    return s + (a.photos||[]).filter(p=>p.dataUrl && p.date && p.date >= dernierExport.split('T')[0]).length;
+  }, 0) : nbPhotos;
 
   document.getElementById('modal').innerHTML=`
   <div class="modal-head">
@@ -6591,9 +6595,13 @@ function ouvrirExportModal(){
     <div style="font-size:13px;font-weight:500;margin-bottom:10px">Choisir le mode d'export :</div>
 
     <div style="display:flex;flex-direction:column;gap:8px">
-      <div style="background:#fff;border:2px solid var(--moss-mid);border-radius:8px;padding:12px 14px;cursor:pointer" onclick="exporterAvecPhotos();closeModal()">
-        <div style="font-weight:500">📄 Fichier unique</div>
-        <div style="font-size:12px;color:var(--stone);margin-top:3px">Un seul fichier JSON complet. Peut planter si volume > 500 MB. Utilise le streaming si votre navigateur le supporte.</div>
+
+      <div style="background:#fff;border:2px solid #7c3aed;border-radius:8px;padding:12px 14px">
+        <div style="font-weight:500;margin-bottom:4px">🔄 Export incrémental <span style="font-size:11px;background:#f0ebff;color:#7c3aed;border-radius:4px;padding:2px 6px;margin-left:6px">Nouveau</span></div>
+        <div style="font-size:12px;color:var(--stone);margin-bottom:8px">Exporte uniquement les photos ajoutées depuis le dernier export.<br>Dernier export : <strong>${dernierExportDate}</strong> · ${nbNouvellesPhotos} nouvelles photos</div>
+        <button class="btn btn-primary" style="width:100%;background:#7c3aed" onclick="exporterIncremental()">
+          ⬇️ Exporter les ${nbNouvellesPhotos} nouvelles photos
+        </button>
       </div>
 
       <div style="background:#fff;border:2px solid var(--border);border-radius:8px;padding:12px 14px">
@@ -6610,12 +6618,85 @@ function ouvrirExportModal(){
           </select>
         </div>
         <button class="btn btn-primary" style="margin-top:10px;width:100%" onclick="exporterParLots(parseInt(document.getElementById('export-lot-size').value))">
-          ⬇️ Exporter par lots
+          ⬇️ Exporter par lots (toutes photos)
         </button>
       </div>
+
+      <div style="background:#fff;border:2px solid var(--border);border-radius:8px;padding:12px 14px;cursor:pointer" onclick="exporterAvecPhotos();closeModal()">
+        <div style="font-weight:500">📄 Fichier unique</div>
+        <div style="font-size:12px;color:var(--stone);margin-top:3px">Un seul fichier JSON complet. Peut planter si volume > 500 MB.</div>
+      </div>
+
     </div>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
+}
+
+async function exporterIncremental(){
+  closeModal();
+  const dernierExport = localStorage.getItem('dernier_export_photos_iso')||'';
+  const dateRef = dernierExport ? dernierExport.split('T')[0] : '2000-01-01';
+
+  const photosAExporter = [];
+
+  // Photos des arbres
+  for(const a of db.arbres){
+    for(const p of (a.photos||[])){
+      if(!p.dataUrl) continue;
+      if(p.date && p.date < dateRef) continue;
+      photosAExporter.push({type:'arbre', arbreId:a.id, photoId:p.id, dataUrl:p.dataUrl});
+    }
+  }
+
+  // Photos des pots
+  for(const pot of (db.pots||[])){
+    for(const p of (pot.photos||[])){
+      if(!p.dataUrl) continue;
+      if(p.date && p.date < dateRef) continue;
+      photosAExporter.push({type:'pot', potId:pot.id, photoId:p.id, dataUrl:p.dataUrl});
+    }
+  }
+
+  if(!photosAExporter.length){
+    afficherIndicateur('✅ Aucune nouvelle photo depuis le dernier export');
+    return;
+  }
+
+  afficherIndicateur(`🔄 Export incrémental — compression de ${photosAExporter.length} photos…`);
+
+  // Compresser chaque photo avant export (800px / 75% JPEG)
+  const photosCompressees = [];
+  for(let i=0; i<photosAExporter.length; i++){
+    const item = photosAExporter[i];
+    if((i+1) % 10 === 0) afficherIndicateur(`🔄 Compression ${i+1}/${photosAExporter.length}…`);
+    try{
+      const dataUrlCompresse = await compresserPhoto(item.dataUrl, 800, 0.75);
+      photosCompressees.push({...item, dataUrl: dataUrlCompresse});
+    } catch(_){
+      photosCompressees.push(item); // fallback sans compression
+    }
+  }
+
+  const now = new Date();
+  const ts = now.getFullYear()+''+String(now.getMonth()+1).padStart(2,'0')+''+String(now.getDate()).padStart(2,'0');
+  const payload = {
+    _type: 'yugen_photos_incrementales',
+    exportedAt: now.toISOString(),
+    depuisDate: dateRef,
+    nbPhotos: photosAExporter.length,
+    photos: photosCompressees
+  };
+
+  const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Yugen_photos_incr_${ts}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  localStorage.setItem('dernier_export_photos_iso', now.toISOString());
+  afficherIndicateur(`✅ ${photosAExporter.length} photos exportées (arbres + pots)`);
 }
 
 // Export par lots — génère N fichiers JSON de ~maxMB chacun avec photos compressées à 800px
@@ -6923,9 +7004,38 @@ async function chargerJSON(input){
       let data;
       try{ data = JSON.parse(e.target.result); }
       catch(err){ _hideLoading(); alert('JSON invalide : '+err.message); return; }
-      // Libérer le texte brut (peut faire 50+ Mo) dès que possible — évite de le garder
-      // en mémoire en plus de l'objet parsé pendant tout le reste du chargement.
       e.target.result = null;
+
+      // Détecter un fichier d'export incrémental
+      if(data._type === 'yugen_photos_incrementales'){
+        _hideLoading();
+        const nb = (data.photos||[]).length;
+        if(!confirm(`Importer ${nb} photos incrémentielles depuis le ${new Date(data.exportedAt).toLocaleString('fr-CH')} ?`)) return;
+        let importées = 0;
+        for(const item of (data.photos||[])){
+          if(item.type === 'pot' || item.potId){
+            const pot = (db.pots||[]).find(x=>x.id===item.potId);
+            if(!pot) continue;
+            const p = (pot.photos||[]).find(x=>x.id===item.photoId);
+            if(!p) continue;
+            await idbSauvegarderPhoto('pot_'+pot.id, p.id, item.dataUrl);
+            p.dataUrl = item.dataUrl;
+          } else {
+            const a = db.arbres.find(x=>x.id===item.arbreId);
+            if(!a) continue;
+            const p = (a.photos||[]).find(x=>x.id===item.photoId);
+            if(!p) continue;
+            await idbSauvegarderPhoto(a.id, p.id, item.dataUrl);
+            p.dataUrl = item.dataUrl;
+          }
+          importées++;
+        }
+        autoSave();
+        render();
+        afficherIndicateur(`✅ ${importées} photos incrémentielles importées`);
+        return;
+      }
+
       const collection = data.db || data;
       if(!collection.arbres || !Array.isArray(collection.arbres)){
         _hideLoading(); alert('Format non reconnu'); return;
@@ -8266,12 +8376,15 @@ function _buildSyncPayloadRaw(){
   const arbresLeger = db.arbres.map(a=>({
     ...a, photos:(a.photos||[]).map(p=>({...p,dataUrl:null}))
   }));
+  const potsLeger = (db.pots||[]).map(p=>({
+    ...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))
+  }));
   const raw = {
     version:5, savedAt:new Date().toISOString(),
     nextId:db.nextId, nextPotId:db.nextPotId||1,
     nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
-    pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
+    pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
     especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
@@ -8319,6 +8432,7 @@ function ouvrirSyncModal(){
           <div id="sync-code-display" style="flex:1;font-family:monospace;font-size:13px;font-weight:700;letter-spacing:.08em;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--ink)">${binId}</div>
           <button onclick="syncCopierCode()" style="padding:8px 12px;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">📋 Copier</button>
         </div>
+        <button onclick="reinitialiserGist()" style="margin-top:8px;width:100%;padding:8px;font-size:12px;color:#b45309;background:#fff8e6;border:1px solid #f0c040;border-radius:6px;cursor:pointer;font-weight:600">🔄 Réinitialiser — créer un nouveau Gist</button>
       </div>` : ''}
     </div>
 
@@ -8339,6 +8453,15 @@ function ouvrirSyncModal(){
     <div id="sync-status" style="margin-top:10px;font-size:12px;color:var(--stone);text-align:center;min-height:18px"></div>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
+}
+
+function reinitialiserGist(){
+  if(!confirm('Effacer l\'ancien code de sync et créer un nouveau Gist au prochain envoi ?')) return;
+  localStorage.removeItem('sync_bin_id');
+  localStorage.removeItem('sync_saved_at');
+  localStorage.removeItem('sync_saved_at_iso');
+  ouvrirSyncModal();
+  afficherIndicateur('🔄 Gist réinitialisé — clique "Envoyer" pour créer un nouveau');
 }
 
 function sauvegarderTokenGist(){
@@ -8376,6 +8499,12 @@ async function syncEnvoyer(){
     let resp, data;
     if(gistId){
       resp = await fetch('https://api.github.com/gists/'+gistId,{method:'PATCH',headers,body});
+      // Si le Gist n'existe plus (404) ou accès refusé (403/401), créer un nouveau
+      if(resp.status===404 || resp.status===403 || resp.status===401){
+        if(status) status.textContent = '⚠️ Ancien Gist inaccessible — création d\'un nouveau…';
+        localStorage.removeItem('sync_bin_id');
+        resp = await fetch('https://api.github.com/gists',{method:'POST',headers,body});
+      }
     } else {
       resp = await fetch('https://api.github.com/gists',{method:'POST',headers,body});
     }
