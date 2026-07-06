@@ -8319,6 +8319,7 @@ function ouvrirSyncModal(){
           <div id="sync-code-display" style="flex:1;font-family:monospace;font-size:13px;font-weight:700;letter-spacing:.08em;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--ink)">${binId}</div>
           <button onclick="syncCopierCode()" style="padding:8px 12px;background:#fff;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">📋 Copier</button>
         </div>
+        <button onclick="reinitialiserGist()" style="margin-top:6px;font-size:11px;color:var(--stone);background:none;border:none;cursor:pointer;text-decoration:underline">🔄 Réinitialiser (créer un nouveau Gist)</button>
       </div>` : ''}
     </div>
 
@@ -8339,6 +8340,15 @@ function ouvrirSyncModal(){
     <div id="sync-status" style="margin-top:10px;font-size:12px;color:var(--stone);text-align:center;min-height:18px"></div>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
+}
+
+function reinitialiserGist(){
+  if(!confirm('Effacer l\'ancien code de sync et créer un nouveau Gist au prochain envoi ?')) return;
+  localStorage.removeItem('sync_bin_id');
+  localStorage.removeItem('sync_saved_at');
+  localStorage.removeItem('sync_saved_at_iso');
+  ouvrirSyncModal();
+  afficherIndicateur('🔄 Gist réinitialisé — clique "Envoyer" pour créer un nouveau');
 }
 
 function sauvegarderTokenGist(){
@@ -8376,6 +8386,12 @@ async function syncEnvoyer(){
     let resp, data;
     if(gistId){
       resp = await fetch('https://api.github.com/gists/'+gistId,{method:'PATCH',headers,body});
+      // Si le Gist n'existe plus (404) ou accès refusé (403/401), créer un nouveau
+      if(resp.status===404 || resp.status===403 || resp.status===401){
+        if(status) status.textContent = '⚠️ Ancien Gist inaccessible — création d\'un nouveau…';
+        localStorage.removeItem('sync_bin_id');
+        resp = await fetch('https://api.github.com/gists',{method:'POST',headers,body});
+      }
     } else {
       resp = await fetch('https://api.github.com/gists',{method:'POST',headers,body});
     }
