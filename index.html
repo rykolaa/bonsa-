@@ -7217,10 +7217,28 @@ function _showProgressLoading(msg, current, total, lotIdx, lotTotal){
 }
 
 // Charge une collection complète (remplace)
-async function _chargerCollection(collection){
-  // Vider l'IDB et réimporter les photos
+async function _chargerCollection(collection, preserverPhotos=false){
   const idb = await ouvrirIDB();
+
+  // Si on veut préserver les photos existantes (ex: sync entre appareils)
+  let photosPreservees = [];
+  if(preserverPhotos){
+    photosPreservees = await idbToutesPhotos();
+  }
+
+  // Vider l'IDB et réimporter les photos
   await new Promise(res=>{ const tx=idb.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).clear(); tx.oncomplete=res; });
+
+  // Remettre les photos préservées
+  if(photosPreservees.length){
+    const idb2 = await ouvrirIDB();
+    const tx2 = idb2.transaction(IDB_STORE,'readwrite');
+    const store2 = tx2.objectStore(IDB_STORE);
+    for(const ph of photosPreservees){
+      store2.put({key:ph.key, dataUrl:ph.dataUrl}, ph.key);
+    }
+    await new Promise(res=>{ tx2.oncomplete=res; tx2.onerror=res; });
+  }
 
   const arbresSource = collection.arbres||[];
   let nbPhotos = 0;
@@ -8565,37 +8583,11 @@ async function syncRecevoir(){
       if(!confirm(nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\nOK = Remplacer par la sync\nAnnuler = Abandonner')) return;
     }
     _showLoading('Chargement de la sync…');
-    // Sauvegarder les clés photos existantes dans IndexedDB avant de charger
-    const photosExistantes = await idbToutesPhotos();
-    await _chargerCollection(collection);
-    // Réassocier les photos existantes aux arbres et pots chargés
-    let photosRestaurees = 0;
-    for(const {key, dataUrl} of photosExistantes){
-      // clé format: arbreId_photoId ou pot_potId_photoId
-      if(key.startsWith('pot_')){
-        const parts = key.split('_');
-        const potId = parseInt(parts[1]);
-        const photoId = parts[2];
-        const pot = (db.pots||[]).find(p=>p.id===potId);
-        if(pot){
-          const ph = (pot.photos||[]).find(p=>p.id===photoId);
-          if(ph){ ph.dataUrl = dataUrl; photosRestaurees++; }
-        }
-      } else {
-        const parts = key.split('_');
-        const arbreId = parseInt(parts[0]);
-        const photoId = parts[1];
-        const a = db.arbres.find(x=>x.id===arbreId);
-        if(a){
-          const ph = (a.photos||[]).find(p=>p.id===photoId);
-          if(ph){ ph.dataUrl = dataUrl; photosRestaurees++; }
-        }
-      }
-    }
+    await _chargerCollection(collection, true);
     localStorage.setItem('sync_bin_id', code);
     localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
     render(); _hideLoading(); closeModal();
-    afficherIndicateur('✅ Sync reçue — '+collection.arbres.length+' arbres · '+photosRestaurees+' photos préservées');
+    afficherIndicateur('✅ Sync reçue — '+collection.arbres.length+' arbres · photos préservées');
   } catch(e){
     if(status) status.textContent='❌ '+e.message;
     _hideLoading();
