@@ -7235,7 +7235,7 @@ async function _chargerCollection(collection, preserverPhotos=false){
     const tx2 = idb2.transaction(IDB_STORE,'readwrite');
     const store2 = tx2.objectStore(IDB_STORE);
     for(const ph of photosPreservees){
-      store2.put({key:ph.key, dataUrl:ph.dataUrl}, ph.key);
+      store2.put({key:ph.key, dataUrl:ph.dataUrl});
     }
     await new Promise(res=>{ tx2.oncomplete=res; tx2.onerror=res; });
   }
