@@ -1557,7 +1557,8 @@ function renderCollection(c){
   if(state.disp==='grid'){
     html+=`<div class="grid">`+filtered.map(a=>{
       const days=daysUntil(a.prochain_soin);
-      const lastPhoto=(a.photos||[]).find(p=>p.dataUrl);
+      const photos = a.photos||[];
+      const lastPhoto = (a.cover_photo_id ? photos.find(p=>p.id===a.cover_photo_id&&p.dataUrl) : null) || photos.find(p=>p.dataUrl);
       return`<div class="card" onclick="openDetail(${a.id})" style="position:relative">
         <div class="card-thumb">
           ${lastPhoto
@@ -1583,8 +1584,10 @@ function renderCollection(c){
       <div class="list-header"><div></div><div>Nom</div><div>Espèce</div><div>Style</div><div>Hauteur</div><div>Santé</div><div>Prochain soin</div></div>
       ${filtered.map(a=>{
         const days=daysUntil(a.prochain_soin);
+        const photos = a.photos||[];
+        const coverList = (a.cover_photo_id ? photos.find(p=>p.id===a.cover_photo_id&&p.dataUrl) : null) || photos.find(p=>p.dataUrl);
         return`<div class="list-row" onclick="openDetail(${a.id})">
-          <div class="list-thumb">${(a.photos||[]).find(p=>p.dataUrl)?`<img src="${(a.photos||[]).find(p=>p.dataUrl).dataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px" alt="${a.nom}">`:`${getEmoji(a.espece)}`}</div>
+          <div class="list-thumb">${coverList?`<img src="${coverList.dataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px" alt="${a.nom}">`:`${getEmoji(a.espece)}`}</div>
           <div><div style="font-weight:500">${a.nom}</div><div style="font-size:11px;color:var(--stone)">${a.num}</div></div>
           <div style="font-size:12px;font-style:italic;color:var(--stone)">${a.espece}${getLatin(a.espece, a)?` — <em>${getLatin(a.espece, a)}</em>`:''}</div>
           <div style="font-size:12px">${styleShort(a.style)}</div>
@@ -8554,9 +8557,9 @@ async function syncRecevoir(){
   if(!code){ if(status) status.textContent='⚠️ Entrez un code'; return; }
   if(status) status.textContent='⏳ Récupération…';
   try{
-    const headers = {'Accept':'application/vnd.github+json'};
+    const headers = {'Accept':'application/vnd.github+json', 'Cache-Control':'no-cache'};
     const _t=getGistToken(); if(_t) headers["Authorization"]="Bearer "+_t;
-    const resp = await fetch('https://api.github.com/gists/'+code, {headers});
+    const resp = await fetch('https://api.github.com/gists/'+code+'?t='+Date.now(), {headers, cache:'no-store'});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
     // Lire l'index
