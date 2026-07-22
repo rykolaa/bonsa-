@@ -1006,6 +1006,20 @@ function daysUntilNext(a){
   return s ? daysUntil(s.date) : null;
 }
 
+function replanifRowHtml(prefix, type, date){
+  const rid = 'rr'+Math.random().toString(36).slice(2,9);
+  return `<div class="repl-row" data-rid="${rid}" style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+    <input type="date" class="repl-date" value="${date||''}" style="flex:1;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+    <select class="repl-type" style="flex:1;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px">${TRAVAUX_TYPES.map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('')}</select>
+    <button type="button" class="btn btn-icon" style="border:1px solid var(--border);font-size:14px;padding:4px 8px" onclick="this.closest('.repl-row').remove()" title="Retirer cette reprogrammation">🗑️</button>
+  </div>`;
+}
+
+function ajouterReplanifRow(prefix, type, date){
+  const list = document.getElementById(prefix+'-replanif-list');
+  if(list) list.insertAdjacentHTML('beforeend', replanifRowHtml(prefix, type, date||''));
+}
+
 function validerSoin(arbreId, soinType, soinDate, event){
   if(event) event.stopPropagation();
   const a = db.arbres.find(x=>x.id===arbreId);
@@ -1036,24 +1050,16 @@ function validerSoin(arbreId, soinType, soinDate, event){
       <div class="fg"><label>Coût (CHF)</label><input id="v-cout" type="number" min="0" step="0.5" value="${coutDefaut}"></div>
     </div>
     <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer">
-        <input type="checkbox" id="v-reprogrammer" style="width:14px;height:14px" ${prochainDefaut?'checked':''} onchange="document.getElementById('v-replanif-wrap').style.display=this.checked?'block':'none'">
-        Reprogrammer ce soin
-      </label>
-    </div>
-    <div id="v-replanif-wrap" style="${prochainDefaut?'':'display:none'}">
-    <div class="form-row">
-      <div class="fg"><label>Prochain soin</label><input id="v-pdate" type="date" value="${prochainDefaut}"></div>
-      <div class="fg"><label>Type</label><select id="v-ptype">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
-    </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-      ${getTravaux().filter(t=>t.freq).slice(0,6).map(t=>
-        `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="
-          document.getElementById('v-ptype').value='${esc(t.nom)}';
-          document.getElementById('v-pdate').value=new Date(Date.now()+${t.freq}*86400000).toISOString().split('T')[0]
-        ">${t.emoji} +${t.freq}j</button>`
-      ).join('')}
-    </div>
+      <label style="font-size:12px;font-weight:500">Reprogrammations (aucune, une ou plusieurs)</label>
+      <div id="v-replanif-list" style="margin-top:8px">
+        ${prochainDefaut ? replanifRowHtml('v', soinType, prochainDefaut) : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
+        ${getTravaux().filter(t=>t.freq).slice(0,6).map(t=>
+          `<button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="ajouterReplanifRow('v','${esc(t.nom)}',new Date(Date.now()+${t.freq}*86400000).toISOString().split('T')[0])">${t.emoji} +${t.freq}j</button>`
+        ).join('')}
+        <button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="ajouterReplanifRow('v','${esc(soinType)}','')">➕ Ajouter une reprogrammation</button>
+      </div>
     </div>
   </div>
   <div class="modal-footer">
@@ -1061,14 +1067,6 @@ function validerSoin(arbreId, soinType, soinDate, event){
     <button class="btn btn-primary" onclick="confirmerValidationSoin(${arbreId})">✓ Valider</button>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
-  // Câbler la checkbox "reprogrammer quand même" pour les soins sans fréquence
-  setTimeout(()=>{
-    const cb = document.getElementById('v-reprogrammer');
-    const wrap = document.getElementById('v-replanif-wrap');
-    if(cb && wrap) cb.addEventListener('change', function(){
-      wrap.style.display = this.checked ? 'block' : 'none';
-    });
-  }, 0);
 }
 
 function confirmerValidationSoin(arbreId){
@@ -1077,14 +1075,14 @@ function confirmerValidationSoin(arbreId){
   const date      = document.getElementById('v-date').value;
   const type      = document.getElementById('v-type').value;
   const desc      = document.getElementById('v-desc').value;
-  const pdate     = document.getElementById('v-pdate').value;
-  const ptype     = document.getElementById('v-ptype').value;
   const cout     = parseFloat(document.getElementById('v-cout')?.value)||0;
   const origType  = document.getElementById('v-soin-type-orig').value;
   const origDate  = document.getElementById('v-soin-date-orig').value;
 
-  const reprogrammer = document.getElementById('v-reprogrammer')?.checked;
-  const supprimer = !reprogrammer;
+  const reprogrammations = [...document.querySelectorAll('#v-replanif-list .repl-row')]
+    .map(row=>({date:row.querySelector('.repl-date').value, type:row.querySelector('.repl-type').value}))
+    .filter(r=>r.date);
+
   // Enregistrer dans l'historique
   if(!a.travaux) a.travaux=[];
   a.travaux.unshift({date, type, desc, cout, photosLinked:[]});
@@ -1093,9 +1091,7 @@ function confirmerValidationSoin(arbreId){
   if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a).filter(s=>!(s.type===origType&&s.date===origDate));
   else a.soins_planifies = a.soins_planifies.filter(s=>!(s.type===origType&&s.date===origDate));
 
-  if(!supprimer && pdate){
-    a.soins_planifies.push({type:ptype, date:pdate, notes:''});
-  }
+  reprogrammations.forEach(r=>a.soins_planifies.push({type:r.type, date:r.date, notes:''}));
 
   // Mettre à jour prochain_soin (rétrocompatibilité)
   const next = a.soins_planifies.slice().sort((a,b)=>a.date.localeCompare(b.date))[0];
@@ -1104,14 +1100,18 @@ function confirmerValidationSoin(arbreId){
 
   declencherRappelSoin(a, type, date);
   closeModal(); render(); autoSave();
-  afficherIndicateur(`✅ ${type} validé — ${a.nom}${!supprimer?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
+  const suffix = reprogrammations.length===1 ? ' · Prochain : '+reprogrammations[0].type+' le '+fmtDate(reprogrammations[0].date)
+    : reprogrammations.length>1 ? ` · ${reprogrammations.length} reprogrammations ajoutées` : '';
+  afficherIndicateur(`✅ ${type} validé — ${a.nom}${suffix}`);
 }
+
 
 function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
   const today = new Date().toISOString().split('T')[0];
   const freqDefaut = getSoinFreq(soinType);
   const prochainDefaut = freqDefaut ? new Date(Date.now() + freqDefaut*86400000).toISOString().split('T')[0] : '';
   const arbres = arbreIds.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const coutDefaut = arbres.length ? getSoinCoutPourArbre(soinType, arbres[0]) : 0;
 
   const m = document.getElementById('modal');
   m.innerHTML=`
@@ -1134,24 +1134,19 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
       <div class="fg"><label>Type de soin réalisé</label><select id="vm-type">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
     </div>
     <div class="form-row one"><div class="fg"><label>Notes (facultatif, appliquées à tous)</label><input id="vm-desc" placeholder="Ex: Biogold 1 pastille, bon état…"></div></div>
-    <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer">
-        <input type="checkbox" id="vm-reprogrammer" style="width:14px;height:14px" ${prochainDefaut?'checked':''} onchange="document.getElementById('vm-replanif-wrap').style.display=this.checked?'block':'none'">
-        Reprogrammer ce soin pour tous les arbres
-      </label>
+    <div class="form-row">
+      <div class="fg"><label>Coût (CHF, appliqué à tous)</label><input id="vm-cout" type="number" min="0" step="0.5" value="${coutDefaut}"></div>
     </div>
-    <div id="vm-replanif-wrap" style="${prochainDefaut?'':'display:none'}">
-      <div class="form-row">
-        <div class="fg"><label>Prochain soin</label><input id="vm-pdate" type="date" value="${prochainDefaut}"></div>
-        <div class="fg"><label>Type</label><select id="vm-ptype">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
+      <label style="font-size:12px;font-weight:500">Reprogrammations pour tous les arbres (aucune, une ou plusieurs)</label>
+      <div id="vm-replanif-list" style="margin-top:8px">
+        ${prochainDefaut ? replanifRowHtml('vm', soinType, prochainDefaut) : ''}
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
         ${getTravaux().filter(t=>t.freq).slice(0,6).map(t=>
-          `<button class="btn" style="font-size:11px;padding:2px 8px" onclick="
-            document.getElementById('vm-ptype').value='${esc(t.nom)}';
-            document.getElementById('vm-pdate').value=new Date(Date.now()+${t.freq}*86400000).toISOString().split('T')[0]
-          ">${t.emoji} +${t.freq}j</button>`
+          `<button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="ajouterReplanifRow('vm','${esc(t.nom)}',new Date(Date.now()+${t.freq}*86400000).toISOString().split('T')[0])">${t.emoji} +${t.freq}j</button>`
         ).join('')}
+        <button type="button" class="btn" style="font-size:11px;padding:2px 8px" onclick="ajouterReplanifRow('vm','${esc(soinType)}','')">➕ Ajouter une reprogrammation</button>
       </div>
     </div>
   </div>
@@ -1166,23 +1161,24 @@ function confirmerValidationEnMasse(){
   const date     = document.getElementById('vm-date').value;
   const type     = document.getElementById('vm-type').value;
   const desc     = document.getElementById('vm-desc').value;
+  const cout     = parseFloat(document.getElementById('vm-cout')?.value)||0;
   const origType = document.getElementById('vm-soin-type').value;
   const origDate = document.getElementById('vm-soin-date').value;
   const ids      = document.getElementById('vm-arbre-ids').value.split(',').map(Number);
-  const reprogrammer = document.getElementById('vm-reprogrammer')?.checked;
-  const pdate    = document.getElementById('vm-pdate')?.value||'';
-  const ptype    = document.getElementById('vm-ptype')?.value||type;
+
+  const reprogrammations = [...document.querySelectorAll('#vm-replanif-list .repl-row')]
+    .map(row=>({date:row.querySelector('.repl-date').value, type:row.querySelector('.repl-type').value}))
+    .filter(r=>r.date);
 
   let count = 0;
   ids.forEach(id=>{
     const a = db.arbres.find(x=>x.id===id);
     if(!a) return;
     if(!a.travaux) a.travaux=[];
-    const coutDefaut = getSoinCoutPourArbre(origType, a);
-    a.travaux.unshift({date, type, desc, cout:coutDefaut, photosLinked:[]});
+    a.travaux.unshift({date, type, desc, cout, photosLinked:[]});
     if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
     a.soins_planifies = a.soins_planifies.filter(s=>!(s.type===origType&&s.date===origDate));
-    if(reprogrammer && pdate) a.soins_planifies.push({type:ptype, date:pdate, notes:''});
+    reprogrammations.forEach(r=>a.soins_planifies.push({type:r.type, date:r.date, notes:''}));
     const next = a.soins_planifies.slice().sort((x,y)=>x.date.localeCompare(y.date))[0];
     a.prochain_soin = next?.date||'';
     a.type_soin     = next?.type||'';
@@ -1192,7 +1188,9 @@ function confirmerValidationEnMasse(){
   autoSave();
   closeModal();
   render();
-  afficherIndicateur(`✅ ${type} validé pour ${count} arbre${count>1?'s':''}${reprogrammer&&pdate?' · Prochain : '+ptype+' le '+fmtDate(pdate):''}`);
+  const suffix = reprogrammations.length===1 ? ' · Prochain : '+reprogrammations[0].type+' le '+fmtDate(reprogrammations[0].date)
+    : reprogrammations.length>1 ? ` · ${reprogrammations.length} reprogrammations ajoutées` : '';
+  afficherIndicateur(`✅ ${type} validé pour ${count} arbre${count>1?'s':''}${suffix}`);
 }
 
 function ouvrirValidationEnMasseDepuisCollection(){
