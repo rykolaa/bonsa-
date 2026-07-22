@@ -464,6 +464,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <button onclick="masseModifier('style')"    class="masse-btn">🎋 Modifier le style</button>
     <button onclick="masseModifier('espece')"   class="masse-btn">🌿 Modifier l'espèce</button>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
+    <button onclick="masseAjouterTravailRealise()" class="masse-btn">✅ Ajouter un travail réalisé</button>
     <button onclick="masseAjouterTravail()"     class="masse-btn">🔧 Ajouter un travail planifié</button>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
     <button onclick="masseSante()"              class="masse-btn">📊 Normaliser la santé à 85%</button>
@@ -1221,7 +1222,7 @@ function ouvrirValidationEnMasseDepuisCollection(){
       ? `<div style="color:var(--stone);font-size:13px;padding:16px 0">Aucun soin planifié commun trouvé pour les arbres sélectionnés.</div>`
       : `<p style="font-size:13px;color:var(--stone);margin-bottom:14px">Soins planifiés trouvés parmi la sélection — clique sur un groupe pour le valider :</p>
         ${groupes.map(g=>`
-          <div class="obs-item" style="cursor:pointer;border-left:3px solid ${g.date<today?'var(--rust)':'var(--moss)'}" onclick="closeModal();ouvrirValidationEnMasse(${JSON.stringify(g.type)},${JSON.stringify(g.date)},${JSON.stringify(g.ids)})">
+          <div class="obs-item" style="cursor:pointer;border-left:3px solid ${g.date<today?'var(--rust)':'var(--moss)'}" onclick='closeModal();ouvrirValidationEnMasse(${JSON.stringify(g.type)},${JSON.stringify(g.date)},${JSON.stringify(g.ids)})'>
             <div style="display:flex;align-items:center;gap:8px">
               <span style="font-size:18px">${TRAVAUX_ICONS[g.type]||'📅'}</span>
               <div style="flex:1">
@@ -7854,6 +7855,55 @@ function masseAppliquerTravail(){
     a.soins_planifies.push({type,date,notes,id:'sp'+Date.now()+Math.random().toString(36).slice(2)});
     // Mettre à jour prochain_soin si plus tôt
     if(!a.prochain_soin || date < a.prochain_soin){ a.prochain_soin=date; a.type_soin=type; }
+  });
+  autoSave();
+  closeModal();
+  etiqSel.clear();
+  render();
+}
+
+function masseAjouterTravailRealise(){
+  document.getElementById('masse-menu').style.display='none';
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+  const today = new Date().toISOString().split('T')[0];
+  const m = document.getElementById('modal');
+  const ov = document.getElementById('modal-overlay');
+  m.innerHTML = `
+    <div style="padding:24px;max-width:420px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px">Ajouter un travail réalisé</div>
+      <div style="font-size:13px;color:var(--stone);margin-bottom:12px">${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Type de travail</label>
+          <select id="mtr-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TRAVAUX_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Date du travail</label>
+          <input id="mtr-date" type="date" value="${today}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Description / Observations</label>
+          <textarea id="mtr-desc" rows="2" placeholder="Décrivez le travail effectué…" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></textarea></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Coût (CHF)</label>
+          <input id="mtr-cout" type="number" min="0" value="0" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="closeModal()" style="padding:8px 16px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer">Annuler</button>
+        <button onclick="masseAppliquerTravailRealise()" style="padding:8px 18px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Enregistrer</button>
+      </div>
+    </div>`;
+  ov.style.display='flex';
+}
+
+function masseAppliquerTravailRealise(){
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const type  = document.getElementById('mtr-type')?.value||'';
+  const date  = document.getElementById('mtr-date')?.value||'';
+  const desc  = document.getElementById('mtr-desc')?.value||'';
+  const cout  = parseFloat(document.getElementById('mtr-cout')?.value)||0;
+  if(!type||!date) return;
+  arbres.forEach(a=>{
+    if(!a.travaux) a.travaux=[];
+    const photosLinked = (a.photos||[]).filter(p=>p.date===date).map(p=>p.id);
+    a.travaux.unshift({date,type,desc,cout,photosLinked});
   });
   autoSave();
   closeModal();
