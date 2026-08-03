@@ -8605,7 +8605,7 @@ async function syncRecevoir(){
   if(!code){ if(status) status.textContent='⚠️ Entrez un code'; return; }
   if(status) status.textContent='⏳ Récupération…';
   try{
-    const headers = {'Accept':'application/vnd.github+json', 'Cache-Control':'no-cache'};
+    const headers = {'Accept':'application/vnd.github+json'};
     const _t=getGistToken(); if(_t) headers["Authorization"]="Bearer "+_t;
     const resp = await fetch('https://api.github.com/gists/'+code+'?t='+Date.now(), {headers, cache:'no-store'});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
