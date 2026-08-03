@@ -6703,7 +6703,7 @@ async function exporterIncremental(){
 
 // Export par lots — génère N fichiers JSON de ~maxMB chacun avec photos compressées à 800px
 // Traite arbre par arbre pour éviter les out-of-memory
-async function exporterParLots(maxMB=30){
+async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
   closeModal();
   const maxBytes = maxMB * 1024 * 1024 * 1.33;
   const date = _dateStr();
@@ -6727,10 +6727,11 @@ async function exporterParLots(maxMB=30){
 
   for(let i=0; i<nbArbres; i++){
     const a = db.arbres[i];
-    afficherIndicateur(`⏳ Arbre ${i+1}/${nbArbres} — lot ${lotNum+1}…`);
+    afficherIndicateur(`⏳ Arbre ${i+1}/${nbArbres} — compression — lot ${lotNum+1}…`);
     await new Promise(r=>setTimeout(r,5));
 
-    // Charger la photo brute depuis IDB sans compression
+    // Charger la photo depuis IDB puis la compresser (max 800px / qualité 80% par défaut)
+    // avant de l'inclure dans l'export, pour garder des fichiers de lot légers et rapides à recharger.
     const photosOut = [];
     for(const p of (a.photos||[])){
       let dataUrl = null;
@@ -6742,7 +6743,7 @@ async function exporterParLots(maxMB=30){
           req.onsuccess = ()=>res(req.result);
           req.onerror = ()=>res(null);
         });
-        if(rec && rec.dataUrl) dataUrl = rec.dataUrl;
+        if(rec && rec.dataUrl) dataUrl = await compresserPhoto(rec.dataUrl, exportMaxPx, exportQualite);
       } catch(e){}
       photosOut.push({...p, dataUrl});
     }
@@ -7113,74 +7114,69 @@ async function chargerLots(files){
     }
   }
 
-  // Lire et parser tous les fichiers
-  _showProgressLoading('Lecture des fichiers…', 0, 1, 0, nb);
-  const collections = [];
-  for(let i=0;i<filesSorted.length;i++){
-    _showProgressLoading('Lecture fichier '+(i+1)+'/'+nb+' ('+Math.round(filesSorted[i].size/1024/1024)+' MB)…', 0, 1, i, nb);
-    await new Promise(r=>setTimeout(r,30));
-    try{
-      const text = await filesSorted[i].text();
-      _showProgressLoading('Décodage lot '+(i+1)+'/'+nb+'…', 0, 1, i, nb);
-      await new Promise(r=>setTimeout(r,30));
-      const data = JSON.parse(text);
-      collections.push(data.db||data);
-    } catch(e){ console.warn('Lot illisible:', filesSorted[i].name, e); }
-  }
-  if(!collections.length){ _hideLoading(); alert('Aucun fichier lisible'); return; }
-
-  // Rassembler tous les arbres
-  const tousArbres = [];
-  const headerCollection = collections[0];
-  collections.forEach(c=>{ (c.arbres||[]).forEach(a=>tousArbres.push(a)); });
-  const totalArbres = tousArbres.length;
-  const totalPhotos = tousArbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
-
-  // Vider IDB
-  _showProgressLoading('Préparation…', 0, totalArbres, 0, nb);
-  const idb = await ouvrirIDB();
-  await new Promise(res=>{ const tx=idb.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).clear(); tx.oncomplete=res; });
-
-  // Charger métadonnées
+  // Vider IDB avant de commencer
+  _showProgressLoading('Préparation…', 0, nb, 0, nb);
+  const idb0 = await ouvrirIDB();
+  await new Promise(res=>{ const tx=idb0.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).clear(); tx.oncomplete=res; });
   db.arbres = [];
-  if(headerCollection.pots) db.pots=headerCollection.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
-  reconstruireCollectionsPots();
-  if(headerCollection.substrats) db.substrats=headerCollection.substrats;
-  if(headerCollection.melanges) db.melanges=headerCollection.melanges;
-  if(headerCollection.rempotages) db.rempotages=headerCollection.rempotages;
-  if(headerCollection.engrais) db.engrais=headerCollection.engrais;
-  if(headerCollection.produits) db.produits=headerCollection.produits;
-  if(headerCollection.especes) db.especes=headerCollection.especes;
-  if(headerCollection.especesSupprimees) db.especesSupprimees=headerCollection.especesSupprimees;
-  if(headerCollection.cultivars) db.cultivars=headerCollection.cultivars;
-  if(headerCollection.travaux_types) db.travaux_types=headerCollection.travaux_types;
-  if(headerCollection.nextId) db.nextId=headerCollection.nextId;
-  if(headerCollection.nextPotId) db.nextPotId=headerCollection.nextPotId;
-  if(headerCollection.nextSubId) db.nextSubId=headerCollection.nextSubId;
-  if(headerCollection.nextMelId) db.nextMelId=headerCollection.nextMelId;
-  if(headerCollection.nextEngId) db.nextEngId=headerCollection.nextEngId;
-  if(headerCollection.nextProdId) db.nextProdId=headerCollection.nextProdId;
-  if(headerCollection.nextRempId) db.nextRempId=headerCollection.nextRempId;
 
-  // Charger chaque arbre — photo par photo avec pauses
-  let nbPhotosChargees = 0;
-  let arbreIdx = 0;
-  for(const a of tousArbres){
-    const nbP = (a.photos||[]).filter(p=>p.dataUrl).length;
-    _showProgressLoading('🌿 '+a.nom+(nbP>0?' — '+nbP+' photo'+(nbP>1?'s':''):''), arbreIdx, totalArbres, 0, nb);
+  // Traite chaque fichier de lot ENTIÈREMENT (lecture → écriture IDB → libération)
+  // avant de passer au suivant — au lieu d'accumuler tous les lots en mémoire à la fois.
+  // C'est ce qui évite le pic mémoire qui faisait planter l'onglet vers le 150e arbre.
+  let totalArbres = 0, nbPhotosChargees = 0, headerAppliqué = false;
+  for(let fi=0; fi<filesSorted.length; fi++){
+    _showProgressLoading('Lecture lot '+(fi+1)+'/'+nb+' ('+Math.round(filesSorted[fi].size/1024/1024)+' MB)…', totalArbres, totalArbres+1, fi, nb);
     await new Promise(r=>setTimeout(r,20));
-    for(const p of (a.photos||[])){
-      if(p.dataUrl){
-        await idbSauverPhoto(a.id, p.id, p.dataUrl);
-        p.dataUrl = null;
-        nbPhotosChargees++;
-        await new Promise(r=>setTimeout(r,15));
-      }
+    let data;
+    try{
+      const text = await filesSorted[fi].text();
+      data = JSON.parse(text);
+    } catch(e){ console.warn('Lot illisible:', filesSorted[fi].name, e); continue; }
+    const c = data.db || data;
+
+    // Les métadonnées de collection (pots, substrats, etc.) : on les prend du premier lot lisible seulement
+    if(!headerAppliqué){
+      if(c.pots) db.pots = c.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
+      reconstruireCollectionsPots();
+      if(c.substrats) db.substrats=c.substrats;
+      if(c.melanges) db.melanges=c.melanges;
+      if(c.rempotages) db.rempotages=c.rempotages;
+      if(c.engrais) db.engrais=c.engrais;
+      if(c.produits) db.produits=c.produits;
+      if(c.especes) db.especes=c.especes;
+      if(c.especesSupprimees) db.especesSupprimees=c.especesSupprimees;
+      if(c.cultivars) db.cultivars=c.cultivars;
+      if(c.travaux_types) db.travaux_types=c.travaux_types;
+      if(c.nextId) db.nextId=c.nextId;
+      if(c.nextPotId) db.nextPotId=c.nextPotId;
+      if(c.nextSubId) db.nextSubId=c.nextSubId;
+      if(c.nextMelId) db.nextMelId=c.nextMelId;
+      if(c.nextEngId) db.nextEngId=c.nextEngId;
+      if(c.nextProdId) db.nextProdId=c.nextProdId;
+      if(c.nextRempId) db.nextRempId=c.nextRempId;
+      headerAppliqué = true;
     }
-    db.arbres.push(a);
-    arbreIdx++;
-    if(arbreIdx % 8 === 0) render();
+
+    const arbresLot = c.arbres || [];
+    for(const a of arbresLot){
+      const nbP = (a.photos||[]).filter(p=>p.dataUrl).length;
+      _showProgressLoading('🌿 '+a.nom+(nbP>0?' — '+nbP+' photo'+(nbP>1?'s':''):'')+' (lot '+(fi+1)+'/'+nb+')', totalArbres, totalArbres+arbresLot.length, fi, nb);
+      await new Promise(r=>setTimeout(r,15));
+      for(const p of (a.photos||[])){
+        if(p.dataUrl){
+          await idbSauverPhoto(a.id, p.id, p.dataUrl);
+          p.dataUrl = null;
+          nbPhotosChargees++;
+        }
+      }
+      db.arbres.push(a);
+      totalArbres++;
+      if(totalArbres % 8 === 0) render();
+    }
+    // data / c / arbresLot sortent de portée ici — libérables par le GC avant le fichier suivant
   }
+
+  if(totalArbres===0){ _hideLoading(); alert('Aucun fichier lisible ou aucun arbre trouvé'); return; }
 
   await chargerPhotosDepuisIDBProgressif();
   window._chargementManuelRecent = Date.now();
