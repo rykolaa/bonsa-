@@ -519,6 +519,20 @@ const STYLES = [
 ];
 // Helpers pour compatibilité avec le reste du code
 function styleFr(s){ const f=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s); return f?f.fr:s; }
+// Retourne {potId: nomArbre} pour les pots actuellement affectés à un arbre
+// (le pot du dernier rempotage de chaque arbre), afin de repérer si un pot
+// est déjà en service ailleurs quand on en choisit un pour un autre arbre.
+// excludeArbreId : ignore cet arbre (utile en édition, pour ne pas flaguer son propre pot actuel)
+function potsEnUsage(excludeArbreId){
+  const map = {};
+  db.arbres.forEach(a=>{
+    if(excludeArbreId && a.id===excludeArbreId) return;
+    const remps = (db.rempotages||[]).filter(r=>r.arbre_id===a.id).sort((x,y)=>(y.date||'').localeCompare(x.date||''));
+    const dernier = remps[0];
+    if(dernier && dernier.pot_id) map[dernier.pot_id] = a.nom;
+  });
+  return map;
+}
 // Calcule le coût total investi dans un arbre
 // = prix achat + travaux (qui incluent déjà les produits) + pot actuel + substrats des rempotages
 function calculCoutArbre(a){
@@ -3224,7 +3238,14 @@ function openTravailModal(arbreId, travailIdx){
         <div class="fg"><label>Pot utilisé</label>
           <select id="f-remp-pot" onchange="afficherVolumeRefPot(this.value)">
             <option value="">— Choisir dans la collection —</option>
-            ${db.pots.map(p=>`<option value="${p.id}" ${r&&r.pot_id===p.id?'selected':''}>${p.nom} · ${p.long}×${p.larg}×${p.haut}cm${p.matiere?' · '+p.matiere:''}</option>`).join('')}
+            ${(()=>{
+              const occ = potsEnUsage(singleArbre?arbreId:0);
+              return db.pots.map(p=>{
+                const usedBy = occ[p.id];
+                const label = `${p.nom} · ${p.long}×${p.larg}×${p.haut}cm${p.matiere?' · '+p.matiere:''}${usedBy?' — ⚠️ déjà sur '+usedBy:''}`;
+                return `<option value="${p.id}" ${r&&r.pot_id===p.id?'selected':''} ${usedBy?'style="color:#b45309"':''}>${label}</option>`;
+              }).join('');
+            })()}
             <option value="__libre">✏️ Saisie libre…</option>
           </select>
         </div>
@@ -5658,7 +5679,14 @@ function openRempotageModal(id){
     <div class="form-row">
       <div class="fg"><label>Pot</label><select id="r-pot" onchange="afficherVolumeRefRemp(this.value)">
         <option value="">— Choisir —</option>
-        ${db.pots.map(p=>`<option value="${p.id}" ${isEdit&&r.pot_id===p.id?'selected':''}>${p.nom} (${p.long}×${p.larg}×${p.haut}cm)</option>`).join('')}
+        ${(()=>{
+          const occ = potsEnUsage(isEdit?r.arbre_id:0);
+          return db.pots.map(p=>{
+            const usedBy = occ[p.id];
+            const label = `${p.nom} (${p.long}×${p.larg}×${p.haut}cm)${usedBy?' — ⚠️ déjà sur '+usedBy:''}`;
+            return `<option value="${p.id}" ${isEdit&&r.pot_id===p.id?'selected':''} ${usedBy?'style="color:#b45309"':''}>${label}</option>`;
+          }).join('');
+        })()}
         <option value="nouveau">＋ Créer un nouveau pot</option>
       </select></div>
     </div>
