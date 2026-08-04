@@ -2814,7 +2814,7 @@ function openDetail(id){
         <button class="btn" style="font-size:12px;padding:4px 10px" onclick="openTravailModal(${a.id})">＋ Ajouter</button>
       </div>
       <div class="tl" style="padding-left:6px">
-        ${(a.travaux||[]).map((t,i,arr)=>{
+        ${[...(a.travaux||[])].sort((x,y)=>String(y.date||'').localeCompare(String(x.date||''))).map((t,i,arr)=>{
           const linkedPhotos = t.photosLinked&&t.photosLinked.length?(a.photos||[]).filter(p=>t.photosLinked.includes(p.id)):[];
           const remp = t.remp_id ? db.rempotages.find(r=>r.id===t.remp_id) : null;
           const pot = remp?.pot_id ? db.pots.find(p=>p.id===remp.pot_id) : null;
