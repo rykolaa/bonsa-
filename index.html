@@ -4401,7 +4401,7 @@ function renderAtelier(c){
   else if(tab==='pots') renderPots(c);
   else if(tab==='ressources') renderRessources(c);
   else if(tab==='especes') renderEspeces(c);
-  else if(tab==='travaux') renderTravaux(c);
+  else if(tab==='travaux') renderTravauxTypes(c);
   else if(tab==='photos') renderPhotosAtelier(c);
   else if(tab==='depenses') renderDepenses(c);
   else renderSubstrats(c);
@@ -5311,7 +5311,7 @@ function restaurerEspece(nom){
 }
 
 // ── TYPES DE TRAVAUX ──────────────────────────────────────────────────────────
-function renderTravaux(c){
+function renderTravauxTypes(c){
   const liste = getTravaux();
   const coutTotal = db.arbres.reduce((s,a)=>(a.travaux||[]).reduce((s2,t)=>s2+(t.cout||0),s),0);
   const MOIS = ['','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
