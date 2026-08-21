@@ -7164,7 +7164,17 @@ async function chargerLots(files){
 
     // Les métadonnées de collection (pots, substrats, etc.) : on les prend du premier lot lisible seulement
     if(!headerAppliqué){
-      if(c.pots) db.pots = c.pots.map(p=>({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))}));
+      if(c.pots){
+        db.pots = [];
+        for(let pi=0; pi<c.pots.length; pi++){
+          const p = c.pots[pi];
+          for(const ph of (p.photos||[])){
+            if(ph.dataUrl){ await idbSauverPhoto('pot_'+p.id, ph.id, ph.dataUrl); nbPhotosChargees++; }
+          }
+          db.pots.push({...p, photos:(p.photos||[]).map(ph=>({...ph,dataUrl:null}))});
+          if(pi%5===0) await new Promise(r=>setTimeout(r,0));
+        }
+      }
       reconstruireCollectionsPots();
       if(c.substrats) db.substrats=c.substrats;
       if(c.melanges) db.melanges=c.melanges;
