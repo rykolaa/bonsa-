@@ -2852,8 +2852,8 @@ function openDetail(id){
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
               <div class="tl-date">${fmtDate(t.date)}</div>
               <div style="display:flex;gap:3px">
-                <button class="btn" style="padding:1px 6px;font-size:11px;border-radius:4px" onclick="openTravailModal(${a.id},${i})" title="Modifier">✏️</button>
-                <button class="btn btn-danger" style="padding:1px 6px;font-size:11px;border-radius:4px" onclick="deleteTravailByIdx(${a.id},${i})">✕</button>
+                <button class="btn" style="padding:1px 6px;font-size:11px;border-radius:4px" onclick="openTravailModal(${a.id},findTravailIdx(${a.id},'${t.date}','${(t.type||'').replace(/'/g,"\\'")}'))" title="Modifier">✏️</button>
+                <button class="btn btn-danger" style="padding:1px 6px;font-size:11px;border-radius:4px" onclick="deleteTravailByIdx(${a.id},findTravailIdx(${a.id},'${t.date}','${(t.type||'').replace(/'/g,"\\'")}'))">✕</button>
               </div>
             </div>
             <div class="tl-type">${TRAVAUX_ICONS[t.type]||'📝'} ${t.type}</div>
