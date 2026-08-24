@@ -536,7 +536,7 @@ function potsEnUsage(excludeArbreId){
 // Calcule le coût total investi dans un arbre
 // = prix achat + travaux (qui incluent déjà les produits) + pot actuel + substrats des rempotages
 function calculCoutArbre(a){
-  const prixAchat = (a.prix || 0) + (a.prix_recolte || 0);
+  const prixAchat = a.origine==='Don' ? 0 : (a.origine==='Yamadori' ? (a.prix_recolte||0) : (a.prix||0));
   const coutTravaux = (a.travaux||[]).reduce((s,t)=>s+(t.cout||0), 0);
   // Pot actuel (dernier rempotage avec pot_id)
   const remps = (db.rempotages||[]).filter(r=>r.arbre_id===a.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -597,6 +597,12 @@ const STYLES_DATA = {
   'Kozumikku': {img:``,desc:'Style cosmique ou Burton, forme libre et artistique.'},
 };
 const ORIGINES = ['Achat','Yamadori','Semis','Bouture','Don','Marcotte'];
+// Libellé du champ de valeur selon l'origine — null = pas de champ de valeur générique
+// (Yamadori a son propre champ "Prix de récolte", Don n'a aucune valeur)
+function labelValeurAcquisition(origine){
+  const LABELS = { 'Achat':"Prix d'achat", 'Semis':'Valeur du semis', 'Bouture':'Valeur du bouturage', 'Marcotte':'Valeur de la marcotte' };
+  return LABELS[origine] || (origine==='Yamadori'||origine==='Don' ? null : "Prix d'achat");
+}
 const EMPLACEMENTS = {
   'Terrasse Est':   ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
   'Terrasse Ouest': ['Table plein soleil','Table mi-ombre','Terre plein plein soleil'],
@@ -1489,10 +1495,10 @@ function renderCollection(c){
     <div class="kpi"><div class="kpi-label">Espèces</div><div class="kpi-val">${new Set(all.map(a=>a.espece)).size}</div></div>
     <div class="kpi"><div class="kpi-label">Styles</div><div class="kpi-val">${new Set(all.map(a=>a.style)).size}</div></div>
     ${(()=>{
-      const totalAchat = all.reduce((s,a)=>s+(a.prix||0),0);
+      const totalAchat = all.reduce((s,a)=>s+calculCoutArbre(a).prixAchat,0);
       const totalTravaux = all.reduce((s,a)=>s+(a.travaux||[]).reduce((st,t)=>st+(t.cout||0),0),0);
       const total = totalAchat + totalTravaux;
-      return total>0 ? `<div class="kpi" title="Achat: ${fmtCHF(totalAchat)} + Travaux: ${fmtCHF(totalTravaux)}"><div class="kpi-label">Investi collection</div><div class="kpi-val" style="font-size:16px">${fmtCHF(total)}</div></div>` : '';
+      return total>0 ? `<div class="kpi" title="Acquisition: ${fmtCHF(totalAchat)} + Travaux: ${fmtCHF(totalTravaux)}"><div class="kpi-label">Investi collection</div><div class="kpi-val" style="font-size:16px">${fmtCHF(total)}</div></div>` : '';
     })()}
     <div class="kpi"><div class="kpi-label">Santé moy.</div><div class="kpi-val">${Math.round(all.reduce((s,a)=>s+a.sante,0)/Math.max(all.length,1))}%</div></div>
     <div class="kpi ${urgent.length>0?'warn':''}"><div class="kpi-label">Soins urgents</div><div class="kpi-val">${urgent.length}</div><div class="kpi-sub">dans 14 jours</div></div>
@@ -2790,7 +2796,7 @@ function openDetail(id){
         const c = calculCoutArbre(a);
         if(c.total===0) return '';
         const details = [
-          c.prixAchat>0 ? 'Achat '+fmtCHF(c.prixAchat) : '',
+          c.prixAchat>0 ? (a.origine==='Yamadori'?'Récolte ':(labelValeurAcquisition(a.origine)||'Acquisition ')+' ')+fmtCHF(c.prixAchat) : '',
           c.coutTravaux>0 ? 'Travaux '+fmtCHF(c.coutTravaux) : '',
           c.coutPot>0 ? 'Pot '+fmtCHF(c.coutPot) : '',
           c.coutSubstrats>0 ? 'Substrats '+fmtCHF(Math.round(c.coutSubstrats*100)/100) : '',
@@ -2805,8 +2811,8 @@ function openDetail(id){
       })()}
       <div class="info-grid" style="gap:5px">
         <div class="info-block"><div class="info-block-label">Acquisition</div><div class="info-block-val" style="font-size:12px">${fmtDate(a.date_acq)}</div></div>
-        <div class="info-block"><div class="info-block-label">Prix d'achat</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix)}</div></div>
-        ${a.origine==='Yamadori'&&a.prix_recolte?`<div class="info-block"><div class="info-block-label">Prix de récolte</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix_recolte)}</div></div>`:''}
+        ${a.origine==='Yamadori' && a.prix_recolte ? `<div class="info-block"><div class="info-block-label">Prix de récolte</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix_recolte)}</div></div>` : ''}
+        ${a.origine!=='Yamadori' && a.origine!=='Don' && labelValeurAcquisition(a.origine) ? `<div class="info-block"><div class="info-block-label">${labelValeurAcquisition(a.origine)}</div><div class="info-block-val" style="font-size:12px">${fmtCHF(a.prix)}</div></div>` : ''}
         ${a.pepiniere?`<div class="info-block" style="grid-column:1/-1"><div class="info-block-label">Pépinière / Fournisseur</div><div class="info-block-val" style="font-size:12px">${a.pepiniere}</div></div>`:''}
         ${a.alt?`<div class="info-block"><div class="info-block-label">Altitude</div><div class="info-block-val" style="font-size:12px">${a.alt} m</div></div>`:''}
         ${a.gps?`<div class="info-block"><div class="info-block-label">GPS</div><div class="info-block-val" style="font-size:12px">${a.gps}</div></div>`:''}
@@ -3001,7 +3007,10 @@ function showArbreModal(a){
       <div class="fg"><label>Date d'acquisition</label><input id="f-date" type="date" value="${isEdit?a.date_acq||'':''}"></div>
     </div>
     <div class="form-row">
-      <div class="fg"><label>Prix d'achat (CHF)</label><input id="f-prix" type="number" value="${isEdit?a.prix||0:0}"></div>
+      <div class="fg" id="f-prix-wrap" style="${isEdit&&!labelValeurAcquisition(a.origine)?'display:none':''}">
+        <label id="f-prix-label">${(isEdit?labelValeurAcquisition(a.origine):labelValeurAcquisition('Achat'))||"Prix d'achat"} (CHF)</label>
+        <input id="f-prix" type="number" value="${isEdit?a.prix||0:0}">
+      </div>
       <div class="fg"><label>Pépinière / Fournisseur</label><input id="f-pep" value="${isEdit?a.pepiniere||'':''}" placeholder="Nom et lieu"></div>
     </div>
     <div class="form-row" id="f-prix-recolte-wrap" style="${isEdit&&a.origine==='Yamadori'||(!isEdit&&'')?' ':'display:none'}">
@@ -3129,6 +3138,7 @@ function hideStyleTooltip(){
 function saveArbre(id){
   const nom = document.getElementById('f-nom').value.trim();
   if(!nom){alert('Le nom est requis');return;}
+  const origineVal = document.getElementById('f-ori').value;
   const data = {
     nom, num:document.getElementById('f-num').value.trim()||`YUG-${String(db.nextId).padStart(3,'0')}`,
     espece:document.getElementById('f-espece').value,
@@ -3146,10 +3156,10 @@ function saveArbre(id){
     diam_houppier:parseFloat(document.getElementById('f-dh').value)||0,
     diam_nebari:parseFloat(document.getElementById('f-dn').value)||0,
     localisation:(()=>{ const l=document.getElementById('f-loc-lieu')?.value||''; const p=document.getElementById('f-loc-pos')?.value||''; return l&&p?l+' · '+p:l||p; })(),
-    origine:document.getElementById('f-ori').value,
+    origine:origineVal,
     date_acq:document.getElementById('f-date').value,
-    prix:parseFloat(document.getElementById('f-prix').value)||0,
-    prix_recolte:parseFloat(document.getElementById('f-prix-recolte')?.value)||0,
+    prix:origineVal==='Don' ? 0 : (parseFloat(document.getElementById('f-prix').value)||0),
+    prix_recolte:origineVal==='Yamadori' ? (parseFloat(document.getElementById('f-prix-recolte')?.value)||0) : 0,
     pepiniere:document.getElementById('f-pep').value,
     alt:document.getElementById('f-alt').value,
     gps:document.getElementById('f-gps').value,
@@ -4259,6 +4269,11 @@ function majChampsOrigine(origine){
   document.getElementById('f-marcotte-row').style.display = origine==='Marcotte' ? 'flex' : 'none';
   const wrap = document.getElementById('f-prix-recolte-wrap');
   if(wrap) wrap.style.display = origine==='Yamadori' ? 'flex' : 'none';
+  const prixWrap = document.getElementById('f-prix-wrap');
+  const prixLabel = document.getElementById('f-prix-label');
+  const label = labelValeurAcquisition(origine);
+  if(prixWrap) prixWrap.style.display = label ? '' : 'none';
+  if(prixLabel && label) prixLabel.textContent = label + ' (CHF)';
 }
 
 function toggleDropdown(id){
@@ -8137,7 +8152,7 @@ function imprimerFichePDF(ids){
         <div class="info-block"><div class="info-label">Ø Houppier</div><div class="info-val">${a.diam_houppier?a.diam_houppier+' cm':'—'}</div></div>
         <div class="info-block"><div class="info-label">Nébari</div><div class="info-val">${a.diam_nebari?a.diam_nebari+' cm':'—'}</div></div>
         <div class="info-block"><div class="info-label">Acquisition</div><div class="info-val">${fmtDate(a.date_acq)}</div></div>
-        <div class="info-block"><div class="info-label">Prix achat</div><div class="info-val">${fmtCHF(a.prix||0)}</div></div>
+        ${a.origine!=='Don' ? `<div class="info-block"><div class="info-label">${a.origine==='Yamadori'?'Prix de récolte':(labelValeurAcquisition(a.origine)||"Prix d'achat")}</div><div class="info-val">${fmtCHF(a.origine==='Yamadori'?(a.prix_recolte||0):(a.prix||0))}</div></div>` : ''}
         <div class="info-block"><div class="info-label">Coût total</div><div class="info-val" style="color:#3d6b4f">${fmtCHF(Math.round(couts.total))}</div></div>
         <div class="info-block"><div class="info-label">Altitude</div><div class="info-val">${a.alt?a.alt+' m':'—'}</div></div>
       </div>
