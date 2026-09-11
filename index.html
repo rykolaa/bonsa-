@@ -2,8 +2,19 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Yūgen Bonsaï — Collection de Philippe Kreuter</title>
+
+<!-- PWA / installation sur écran d'accueil -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1a18">
+
+<!-- iOS : "Ajouter à l'écran d'accueil" -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Yūgen Bonsaï">
+<link rel="apple-touch-icon" href="icon-192.png">
+
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -6763,7 +6774,6 @@ async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
   const headerBytes = JSON.stringify(headerBase).length;
 
   let lotNum = 0;
-  let lotsTelechargés = [];
   let lotCourant = [];
   let bytesCourant = headerBytes;
   const nbArbres = db.arbres.length;
@@ -6796,7 +6806,6 @@ async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
 
     // Si cet arbre fait dépasser la limite, on télécharge le lot courant d'abord
     if(bytesCourant + aStr.length > maxBytes && lotCourant.length > 0){
-      lotsTelechargés.push(lotCourant);
       lotNum++;
       // Télécharger immédiatement (nombre de lots final inconnu, on met 999 provisoirement)
       const payload = JSON.stringify({...headerBase, _lotNum:lotNum, _lotTotal:999, arbres:lotCourant});
@@ -6804,6 +6813,7 @@ async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
       _telechargerBlob(blob, `Yugen_Bonsai_lot${String(lotNum).padStart(2,'0')}_${date}.json`);
       afficherIndicateur(`⬇️ Lot ${lotNum} téléchargé (${Math.round(blob.size/1024/1024*10)/10} MB)…`);
       await new Promise(r=>setTimeout(r,500));
+      // Libère la mémoire du lot déjà téléchargé avant de continuer
       lotCourant = [aOut];
       bytesCourant = headerBytes + aStr.length;
     } else {
@@ -6815,11 +6825,11 @@ async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
   // Dernier lot
   if(lotCourant.length > 0){
     lotNum++;
-    lotsTelechargés.push(lotCourant);
     const payload = JSON.stringify({...headerBase, _lotNum:lotNum, _lotTotal:lotNum, arbres:lotCourant});
     const blob = new Blob([payload], {type:'application/json'});
     _telechargerBlob(blob, `Yugen_Bonsai_lot${String(lotNum).padStart(2,'0')}_${date}.json`);
     afficherIndicateur(`⬇️ Lot ${lotNum} téléchargé (${Math.round(blob.size/1024/1024*10)/10} MB)…`);
+    lotCourant = [];
   }
 
   sauvegarderLocal();
@@ -8884,6 +8894,14 @@ function syncCopierCode(){
   navigator.clipboard?.writeText(code).then(()=>{
     const btn = document.querySelector('#sync-code-display + button');
     if(btn){ const orig=btn.textContent; btn.textContent='✅ Copié !'; setTimeout(()=>btn.textContent=orig,1500); }
+  });
+}
+
+// PWA : enregistrement du service worker (mode hors-ligne / installation)
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./service-worker.js')
+      .catch(err => console.warn('Service worker non enregistré :', err));
   });
 }
 </script>
