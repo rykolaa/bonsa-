@@ -10,7 +10,7 @@
 // Les données (collection, photos) restent dans localStorage/IndexedDB,
 // ce service worker ne touche à rien de tout ça.
 
-const CACHE_NAME = 'yugen-bonsai-shell-v1';
+const CACHE_NAME = 'yugen-bonsai-shell-v2';
 
 const CORE_ASSETS = [
   './',
@@ -48,8 +48,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
   const isSameOrigin = url.origin === self.location.origin;
+
+  // CRUCIAL : on ne touche jamais aux requêtes vers un autre domaine
+  // (api.github.com pour la sync Gist, Google Fonts, etc.) — on les laisse
+  // filer directement au réseau sans passer par le cache du service worker.
+  if (!isSameOrigin) return;
+
   const isNavigation = req.mode === 'navigate';
-  const isAppShellDoc = isNavigation || (isSameOrigin && url.pathname.endsWith('index.html'));
+  const isAppShellDoc = isNavigation || url.pathname.endsWith('index.html');
 
   if (isAppShellDoc) {
     // Network-first : toujours essayer d'avoir la dernière version en ligne
