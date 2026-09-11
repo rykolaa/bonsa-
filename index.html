@@ -397,6 +397,10 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <button class="mob-btn" style="background:var(--rust)" onclick="openImportModal();toggleMobileMenu()">📥 Importer</button>
     <button class="mob-btn" style="background:#185fa5" onclick="sauvegarderJSON();toggleMobileMenu()">💾 Sauvegarder</button>
     <button class="mob-btn" style="background:#2d6e28" onclick="ouvrirExportModal();toggleMobileMenu()">📦 Export photos</button>
+    <label class="mob-btn" style="background:#8b4a2f;cursor:pointer">
+      📥 Import photos
+      <input type="file" accept=".json" multiple style="display:none" onchange="importerPhotosLots(this);toggleMobileMenu()">
+    </label>
     <label class="mob-btn" style="background:#6b6b5e;cursor:pointer">
       📂 Charger sauvegarde
       <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this);toggleMobileMenu()">
