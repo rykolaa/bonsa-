@@ -7190,34 +7190,38 @@ async function chargerJSON(input){
       _showProgressLoading('Import des lots de photos…', 0, files.length, 0, files.length);
       const filesSorted = [...files].sort((a,b)=>a.name.localeCompare(b.name));
       let totalImportees = 0, totalPots = 0, totalArbres = 0, totalIntrouvables = 0;
-      for(let fi=0; fi<filesSorted.length; fi++){
-        _showProgressLoading('Lot '+(fi+1)+'/'+filesSorted.length, 0, 1, fi, filesSorted.length);
-        const text = fi===0 ? premierTexte : await filesSorted[fi].text();
-        let data; try{ data = JSON.parse(text); } catch(_){ continue; }
-        for(const item of (data.photos||[])){
-          if(item.type === 'pot' || item.potId){
-            // Comparaison en String() : les id peuvent être stockés en nombre ou en
-            // texte selon leur origine (formulaire, sync, import) — la comparaison
-            // stricte (===) ratait des correspondances valides.
-            const pot = (db.pots||[]).find(x=>String(x.id)===String(item.potId));
-            if(!pot){ totalIntrouvables++; continue; }
-            const p = (pot.photos||[]).find(x=>String(x.id)===String(item.photoId));
-            if(!p){ totalIntrouvables++; continue; }
-            await idbSauvegarderPhoto('pot_'+pot.id, p.id, item.dataUrl);
-            p.dataUrl = item.dataUrl;
-            totalPots++;
-          } else {
-            const a = db.arbres.find(x=>String(x.id)===String(item.arbreId));
-            if(!a){ totalIntrouvables++; continue; }
-            const p = (a.photos||[]).find(x=>String(x.id)===String(item.photoId));
-            if(!p){ totalIntrouvables++; continue; }
-            await idbSauvegarderPhoto(a.id, p.id, item.dataUrl);
-            p.dataUrl = item.dataUrl;
-            totalArbres++;
+      try{
+        for(let fi=0; fi<filesSorted.length; fi++){
+          _showProgressLoading('Lot '+(fi+1)+'/'+filesSorted.length, 0, 1, fi, filesSorted.length);
+          const text = fi===0 ? premierTexte : await filesSorted[fi].text();
+          let data; try{ data = JSON.parse(text); } catch(_){ continue; }
+          for(const item of (data.photos||[])){
+            if(item.type === 'pot' || item.potId){
+              // Comparaison en String() : les id peuvent être stockés en nombre ou en
+              // texte selon leur origine (formulaire, sync, import) — la comparaison
+              // stricte (===) ratait des correspondances valides.
+              const pot = (db.pots||[]).find(x=>String(x.id)===String(item.potId));
+              if(!pot){ totalIntrouvables++; continue; }
+              const p = (pot.photos||[]).find(x=>String(x.id)===String(item.photoId));
+              if(!p){ totalIntrouvables++; continue; }
+              await idbSauverPhoto('pot_'+pot.id, p.id, item.dataUrl);
+              p.dataUrl = item.dataUrl;
+              totalPots++;
+            } else {
+              const a = db.arbres.find(x=>String(x.id)===String(item.arbreId));
+              if(!a){ totalIntrouvables++; continue; }
+              const p = (a.photos||[]).find(x=>String(x.id)===String(item.photoId));
+              if(!p){ totalIntrouvables++; continue; }
+              await idbSauverPhoto(a.id, p.id, item.dataUrl);
+              p.dataUrl = item.dataUrl;
+              totalArbres++;
+            }
+            totalImportees++;
           }
-          totalImportees++;
+          await new Promise(r=>setTimeout(r,0));
         }
-        await new Promise(r=>setTimeout(r,0));
+      } catch(errImport){
+        alert('❌ Erreur pendant l\'import : '+errImport.message+' ('+totalImportees+' photos importées avant l\'erreur)');
       }
       autoSave();
       render(); _hideLoading();
@@ -7246,25 +7250,29 @@ async function chargerJSON(input){
         const nb = (data.photos||[]).length;
         if(!confirm(`Importer ${nb} photos incrémentielles depuis le ${new Date(data.exportedAt).toLocaleString('fr-CH')} ?`)) return;
         let importées = 0, importeesPots = 0, importeesArbres = 0, introuvables = 0;
-        for(const item of (data.photos||[])){
-          if(item.type === 'pot' || item.potId){
-            const pot = (db.pots||[]).find(x=>String(x.id)===String(item.potId));
-            if(!pot){ introuvables++; continue; }
-            const p = (pot.photos||[]).find(x=>String(x.id)===String(item.photoId));
-            if(!p){ introuvables++; continue; }
-            await idbSauvegarderPhoto('pot_'+pot.id, p.id, item.dataUrl);
-            p.dataUrl = item.dataUrl;
-            importeesPots++;
-          } else {
-            const a = db.arbres.find(x=>String(x.id)===String(item.arbreId));
-            if(!a){ introuvables++; continue; }
-            const p = (a.photos||[]).find(x=>String(x.id)===String(item.photoId));
-            if(!p){ introuvables++; continue; }
-            await idbSauvegarderPhoto(a.id, p.id, item.dataUrl);
-            p.dataUrl = item.dataUrl;
-            importeesArbres++;
+        try{
+          for(const item of (data.photos||[])){
+            if(item.type === 'pot' || item.potId){
+              const pot = (db.pots||[]).find(x=>String(x.id)===String(item.potId));
+              if(!pot){ introuvables++; continue; }
+              const p = (pot.photos||[]).find(x=>String(x.id)===String(item.photoId));
+              if(!p){ introuvables++; continue; }
+              await idbSauverPhoto('pot_'+pot.id, p.id, item.dataUrl);
+              p.dataUrl = item.dataUrl;
+              importeesPots++;
+            } else {
+              const a = db.arbres.find(x=>String(x.id)===String(item.arbreId));
+              if(!a){ introuvables++; continue; }
+              const p = (a.photos||[]).find(x=>String(x.id)===String(item.photoId));
+              if(!p){ introuvables++; continue; }
+              await idbSauverPhoto(a.id, p.id, item.dataUrl);
+              p.dataUrl = item.dataUrl;
+              importeesArbres++;
+            }
+            importées++;
           }
-          importées++;
+        } catch(errImport){
+          alert('❌ Erreur pendant l\'import : '+errImport.message+' ('+importées+' photos importées avant l\'erreur)');
         }
         autoSave();
         render();
