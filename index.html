@@ -7189,26 +7189,31 @@ async function chargerJSON(input){
     if(premierData?._type === 'yugen_photos_incrementales'){
       _showProgressLoading('Import des lots de photos…', 0, files.length, 0, files.length);
       const filesSorted = [...files].sort((a,b)=>a.name.localeCompare(b.name));
-      let totalImportees = 0;
+      let totalImportees = 0, totalPots = 0, totalArbres = 0, totalIntrouvables = 0;
       for(let fi=0; fi<filesSorted.length; fi++){
         _showProgressLoading('Lot '+(fi+1)+'/'+filesSorted.length, 0, 1, fi, filesSorted.length);
         const text = fi===0 ? premierTexte : await filesSorted[fi].text();
         let data; try{ data = JSON.parse(text); } catch(_){ continue; }
         for(const item of (data.photos||[])){
           if(item.type === 'pot' || item.potId){
-            const pot = (db.pots||[]).find(x=>x.id===item.potId);
-            if(!pot) continue;
-            const p = (pot.photos||[]).find(x=>x.id===item.photoId);
-            if(!p) continue;
+            // Comparaison en String() : les id peuvent être stockés en nombre ou en
+            // texte selon leur origine (formulaire, sync, import) — la comparaison
+            // stricte (===) ratait des correspondances valides.
+            const pot = (db.pots||[]).find(x=>String(x.id)===String(item.potId));
+            if(!pot){ totalIntrouvables++; continue; }
+            const p = (pot.photos||[]).find(x=>String(x.id)===String(item.photoId));
+            if(!p){ totalIntrouvables++; continue; }
             await idbSauvegarderPhoto('pot_'+pot.id, p.id, item.dataUrl);
             p.dataUrl = item.dataUrl;
+            totalPots++;
           } else {
-            const a = db.arbres.find(x=>x.id===item.arbreId);
-            if(!a) continue;
-            const p = (a.photos||[]).find(x=>x.id===item.photoId);
-            if(!p) continue;
+            const a = db.arbres.find(x=>String(x.id)===String(item.arbreId));
+            if(!a){ totalIntrouvables++; continue; }
+            const p = (a.photos||[]).find(x=>String(x.id)===String(item.photoId));
+            if(!p){ totalIntrouvables++; continue; }
             await idbSauvegarderPhoto(a.id, p.id, item.dataUrl);
             p.dataUrl = item.dataUrl;
+            totalArbres++;
           }
           totalImportees++;
         }
@@ -7216,7 +7221,7 @@ async function chargerJSON(input){
       }
       autoSave();
       render(); _hideLoading();
-      afficherIndicateur(`✅ ${totalImportees} photos incrémentielles importées (${filesSorted.length} lots)`);
+      afficherIndicateur(`✅ ${totalImportees} photos importées (${totalArbres} arbres · ${totalPots} pots)${totalIntrouvables?' · '+totalIntrouvables+' sans correspondance':''}`);
       return;
     }
     chargerLots(files);
@@ -7240,28 +7245,30 @@ async function chargerJSON(input){
         _hideLoading();
         const nb = (data.photos||[]).length;
         if(!confirm(`Importer ${nb} photos incrémentielles depuis le ${new Date(data.exportedAt).toLocaleString('fr-CH')} ?`)) return;
-        let importées = 0;
+        let importées = 0, importeesPots = 0, importeesArbres = 0, introuvables = 0;
         for(const item of (data.photos||[])){
           if(item.type === 'pot' || item.potId){
-            const pot = (db.pots||[]).find(x=>x.id===item.potId);
-            if(!pot) continue;
-            const p = (pot.photos||[]).find(x=>x.id===item.photoId);
-            if(!p) continue;
+            const pot = (db.pots||[]).find(x=>String(x.id)===String(item.potId));
+            if(!pot){ introuvables++; continue; }
+            const p = (pot.photos||[]).find(x=>String(x.id)===String(item.photoId));
+            if(!p){ introuvables++; continue; }
             await idbSauvegarderPhoto('pot_'+pot.id, p.id, item.dataUrl);
             p.dataUrl = item.dataUrl;
+            importeesPots++;
           } else {
-            const a = db.arbres.find(x=>x.id===item.arbreId);
-            if(!a) continue;
-            const p = (a.photos||[]).find(x=>x.id===item.photoId);
-            if(!p) continue;
+            const a = db.arbres.find(x=>String(x.id)===String(item.arbreId));
+            if(!a){ introuvables++; continue; }
+            const p = (a.photos||[]).find(x=>String(x.id)===String(item.photoId));
+            if(!p){ introuvables++; continue; }
             await idbSauvegarderPhoto(a.id, p.id, item.dataUrl);
             p.dataUrl = item.dataUrl;
+            importeesArbres++;
           }
           importées++;
         }
         autoSave();
         render();
-        afficherIndicateur(`✅ ${importées} photos incrémentielles importées`);
+        afficherIndicateur(`✅ ${importées} photos importées (${importeesArbres} arbres · ${importeesPots} pots)${introuvables?' · '+introuvables+' sans correspondance':''}`);
         return;
       }
 
