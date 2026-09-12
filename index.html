@@ -60,7 +60,14 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
   .search-wrap{flex:1;max-width:none}
   .nav-tabs,.topbar>.btn-add,.topbar>div:not(.search-wrap):not(.logo){display:none!important}
   .mobile-menu-btn{display:flex}
+  /* Filtres (sidebar) escamotables en tiroir sur mobile */
+  .sidebar{position:fixed;top:0;left:0;bottom:0;z-index:145;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 20px rgba(0,0,0,.2);width:240px;max-width:82vw}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .sidebar-toggle-fab.show{display:flex}
 }
+.sidebar-toggle-fab{display:none;position:fixed;bottom:24px;left:24px;z-index:150;background:var(--moss);color:#fff;border:none;border-radius:50%;width:52px;height:52px;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.25);cursor:pointer;align-items:center;justify-content:center}
+.sidebar-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:140}
+.sidebar-backdrop.show{display:block}
 /* MAIN */
 .body{display:flex;flex:1;overflow:hidden}
 .sidebar{width:210px;background:var(--cream);border-right:1px solid var(--border);padding:16px;overflow-y:auto;flex-shrink:0}
@@ -458,6 +465,8 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     </div>
     <div class="content" id="content"></div>
   </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarMobile()"></div>
+  <button class="sidebar-toggle-fab" id="sidebar-toggle-fab" onclick="toggleSidebarMobile()" title="Filtres">🔍</button>
 </div>
 
 <div id="detail-overlay" style="display:none" class="detail-overlay" onclick="closeDetail()">
@@ -990,10 +999,23 @@ function getFiltered(){
 
 function santeColor(s){return s>=85?'#4a8a42':s>=70?'#b8860b':'#8b4a2f'}
 
+function toggleSidebarMobile(){
+  const sid = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  const isOpen = sid.classList.toggle('mobile-open');
+  bd.classList.toggle('show', isOpen);
+}
+function closeSidebarMobile(){
+  document.getElementById('sidebar')?.classList.remove('mobile-open');
+  document.getElementById('sidebar-backdrop')?.classList.remove('show');
+}
+
 function render(){
+  closeSidebarMobile();
   updateSidebar();
   const sid = document.getElementById('sidebar');
   sid.style.display = state.page==='collection'?'':'none';
+  document.getElementById('sidebar-toggle-fab')?.classList.toggle('show', state.page==='collection');
   ['collection','travaux','galerie','atelier','sante','stats'].forEach(p=>{
     const el=document.getElementById('tab-'+p);
     if(el) el.classList.toggle('active', state.page===p);
