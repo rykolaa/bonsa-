@@ -6812,39 +6812,65 @@ async function exporterIncremental(){
 
   afficherIndicateur(`🔄 Export incrémental — compression de ${photosAExporter.length} photos…`);
 
-  // Compresser chaque photo avant export (800px / 75% JPEG)
-  const photosCompressees = [];
-  for(let i=0; i<photosAExporter.length; i++){
-    const item = photosAExporter[i];
-    if((i+1) % 10 === 0) afficherIndicateur(`🔄 Compression ${i+1}/${photosAExporter.length}…`);
-    try{
-      const dataUrlCompresse = await compresserPhoto(item.dataUrl, 800, 0.75);
-      photosCompressees.push({...item, dataUrl: dataUrlCompresse});
-    } catch(_){
-      photosCompressees.push(item); // fallback sans compression
-    }
-  }
-
+  // Découpage en plusieurs fichiers (~20 Mo compressés chacun) pour éviter le
+  // crash mémoire Chrome observé avec un unique fichier de 2400+ photos : on
+  // compresse et écrit au fur et à mesure, sans jamais garder tout en mémoire.
+  const MAX_LOT_BYTES = 20 * 1024 * 1024 * 1.33;
   const now = new Date();
   const ts = now.getFullYear()+''+String(now.getMonth()+1).padStart(2,'0')+''+String(now.getDate()).padStart(2,'0');
-  const payload = {
-    _type: 'yugen_photos_incrementales',
-    exportedAt: now.toISOString(),
-    depuisDate: dateRef,
-    nbPhotos: photosAExporter.length,
-    photos: photosCompressees
-  };
 
-  const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Yugen_photos_incr_${ts}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  // Nombre de lots inconnu à l'avance (dépend de la taille compressée réelle) ;
+  // on télécharge au fil de l'eau et on ajuste le total dans le nom de fichier après coup.
+  let lotCourant = [];
+  let lotBytes = 0;
+  let lotNum = 1;
+  const lotsTelecharges = [];
+
+  function telechargerLot(photos, num){
+    const payload = {
+      _type: 'yugen_photos_incrementales',
+      _lotNum: num,
+      exportedAt: now.toISOString(),
+      depuisDate: dateRef,
+      nbPhotos: photos.length,
+      photos
+    };
+    const json = JSON.stringify(payload);
+    const blob = new Blob([json], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Yugen_photos_incr_${ts}_lot${num}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    lotsTelecharges.push(num);
+  }
+
+  for(let i=0; i<photosAExporter.length; i++){
+    const item = photosAExporter[i];
+    if((i+1) % 10 === 0) afficherIndicateur(`🔄 Compression ${i+1}/${photosAExporter.length}… (lot ${lotNum})`);
+    let dataUrlCompresse;
+    try{ dataUrlCompresse = await compresserPhoto(item.dataUrl, 800, 0.75); }
+    catch(_){ dataUrlCompresse = item.dataUrl; }
+    const compresse = {type:item.type, arbreId:item.arbreId, potId:item.potId, photoId:item.photoId, dataUrl:dataUrlCompresse};
+    lotCourant.push(compresse);
+    lotBytes += dataUrlCompresse.length;
+    // Laisser respirer le navigateur régulièrement pour permettre au GC de tourner
+    if(i%15===0) await new Promise(r=>setTimeout(r,0));
+    if(lotBytes >= MAX_LOT_BYTES){
+      telechargerLot(lotCourant, lotNum);
+      lotNum++;
+      lotCourant = [];
+      lotBytes = 0;
+      await new Promise(r=>setTimeout(r,50));
+    }
+  }
+  if(lotCourant.length){
+    telechargerLot(lotCourant, lotNum);
+  }
 
   localStorage.setItem('dernier_export_photos_iso', now.toISOString());
-  afficherIndicateur(`✅ ${photosAExporter.length} photos exportées (arbres + pots)`);
+  afficherIndicateur(`✅ ${photosAExporter.length} photos exportées en ${lotsTelecharges.length} fichier${lotsTelecharges.length>1?'s':''} (arbres + pots)`);
 }
 
 // Export par lots — génère N fichiers JSON de ~maxMB chacun avec photos compressées à 800px
@@ -7155,7 +7181,47 @@ async function chargerJSON(input){
   const files = [...(input.files||[])];
   if(!files.length) return;
   input.value='';
-  if(files.length > 1){ chargerLots(files); return; }
+  if(files.length > 1){
+    // Vérifier si ce sont des lots de photos incrémentielles plutôt que des lots d'arbres
+    const premierTexte = await files[0].text();
+    let premierData;
+    try{ premierData = JSON.parse(premierTexte); } catch(_){ premierData = null; }
+    if(premierData?._type === 'yugen_photos_incrementales'){
+      _showProgressLoading('Import des lots de photos…', 0, files.length, 0, files.length);
+      const filesSorted = [...files].sort((a,b)=>a.name.localeCompare(b.name));
+      let totalImportees = 0;
+      for(let fi=0; fi<filesSorted.length; fi++){
+        _showProgressLoading('Lot '+(fi+1)+'/'+filesSorted.length, 0, 1, fi, filesSorted.length);
+        const text = fi===0 ? premierTexte : await filesSorted[fi].text();
+        let data; try{ data = JSON.parse(text); } catch(_){ continue; }
+        for(const item of (data.photos||[])){
+          if(item.type === 'pot' || item.potId){
+            const pot = (db.pots||[]).find(x=>x.id===item.potId);
+            if(!pot) continue;
+            const p = (pot.photos||[]).find(x=>x.id===item.photoId);
+            if(!p) continue;
+            await idbSauvegarderPhoto('pot_'+pot.id, p.id, item.dataUrl);
+            p.dataUrl = item.dataUrl;
+          } else {
+            const a = db.arbres.find(x=>x.id===item.arbreId);
+            if(!a) continue;
+            const p = (a.photos||[]).find(x=>x.id===item.photoId);
+            if(!p) continue;
+            await idbSauvegarderPhoto(a.id, p.id, item.dataUrl);
+            p.dataUrl = item.dataUrl;
+          }
+          totalImportees++;
+        }
+        await new Promise(r=>setTimeout(r,0));
+      }
+      autoSave();
+      render(); _hideLoading();
+      afficherIndicateur(`✅ ${totalImportees} photos incrémentielles importées (${filesSorted.length} lots)`);
+      return;
+    }
+    chargerLots(files);
+    return;
+  }
   const file = files[0];
   const mb = Math.round(file.size/1024/1024*10)/10;
   _showLoading('Lecture de '+file.name+' ('+mb+' MB)...');
