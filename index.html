@@ -139,6 +139,15 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 /* Layout deux colonnes : photo gauche, infos droite */
 .dp-layout{display:grid;grid-template-columns:300px 1fr;flex:1;overflow:hidden}
 .dp-photo-col{position:relative;background:linear-gradient(160deg,var(--moss-light),#c8dfc5);overflow:hidden;display:flex;flex-direction:column}
+.dp-photo-toggle{display:none}
+@media(max-width:700px){
+  .detail-panel{width:100%}
+  .dp-layout{display:flex;flex-direction:column;overflow-y:auto}
+  .dp-photo-col{flex:0 0 auto;max-height:38vh}
+  .dp-body{overflow-y:visible;flex:none}
+  .detail-panel.dp-photo-hidden .dp-photo-col{display:none}
+  .dp-photo-toggle{display:inline-flex}
+}
 .dp-photo-main{flex:1;overflow:hidden;cursor:pointer}
 .dp-photo-main img{width:100%;height:100%;object-fit:cover;display:block;transition:.2s;image-orientation:from-image}
 .dp-photo-main:hover img{transform:scale(1.03)}
@@ -1005,6 +1014,10 @@ function toggleSidebarMobile(){
   const isOpen = sid.classList.toggle('mobile-open');
   bd.classList.toggle('show', isOpen);
 }
+function toggleDetailPhoto(){
+  document.getElementById('detail-panel')?.classList.toggle('dp-photo-hidden');
+}
+
 function closeSidebarMobile(){
   document.getElementById('sidebar')?.classList.remove('mobile-open');
   document.getElementById('sidebar-backdrop')?.classList.remove('show');
@@ -2706,6 +2719,7 @@ function openDetail(id){
     </div>
     <div style="display:flex;gap:6px;align-items:center">
       ${(a.photos||[]).filter(p=>!p.dataUrl).length > 0 ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#f5e6e6;color:var(--rust);border:1px solid #e0b0b0" onclick="nettoyerPhotosFantomes(${a.id})" title="Supprimer les photos sans image">🧹 ${(a.photos||[]).filter(p=>!p.dataUrl).length} fantôme${(a.photos||[]).filter(p=>!p.dataUrl).length>1?'s':''}</button>` : ''}
+      <button class="btn btn-icon dp-photo-toggle" onclick="toggleDetailPhoto()" title="Afficher/masquer la photo">🖼️</button>
       <button class="btn btn-icon" onclick="openEditModal(${a.id})" title="Modifier">✏️</button>
       <button class="btn btn-icon" onclick="openTravailModal(${a.id})" title="Ajouter travail">✂️</button>
       <button class="btn btn-icon" onclick="openPhotoModal(${a.id})" title="Ajouter photo">📷</button>
