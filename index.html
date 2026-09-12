@@ -8776,6 +8776,12 @@ async function syncRecevoir(){
     const resp = await fetch('https://api.github.com/gists/'+code+'?t='+Date.now(), {headers, cache:'no-store'});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
+    // Diagnostic : GitHub tronque le champ "content" des fichiers de Gist trop volumineux
+    // (au-delà d'environ 1 Mo) et signale ça via data.files[x].truncated === true.
+    const metaFileInfo = data.files?.['yugen_meta.json'];
+    if(metaFileInfo?.truncated){
+      throw new Error('yugen_meta.json tronqué par GitHub (fichier trop volumineux) — les pots/données au-delà de la coupure sont perdus à la lecture');
+    }
     // Lire l'index
     const idxContent = data.files?.['yugen_index.json']?.content;
     if(!idxContent) throw new Error('Fichier index introuvable — vérifiez le code');
@@ -8804,7 +8810,7 @@ async function syncRecevoir(){
     localStorage.setItem('sync_bin_id', code);
     localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
     render(); _hideLoading(); closeModal();
-    afficherIndicateur('✅ Sync reçue — '+collection.arbres.length+' arbres · photos préservées');
+    afficherIndicateur('✅ Sync reçue — '+collection.arbres.length+' arbres · '+db.pots.length+' pots · photos préservées');
   } catch(e){
     if(status) status.textContent='❌ '+e.message;
     _hideLoading();
