@@ -6618,6 +6618,22 @@ async function diagnostiquerPhotos(){
   const toutes = await idbToutesPhotos();
   const idbKeys = new Set(toutes.map(r=>r.key));
 
+  // Estimation du stockage utilisé/disponible, et statut de persistance —
+  // utile pour repérer un risque d'éviction avant qu'il ne cause une perte.
+  let infoStockage = '';
+  if(navigator.storage?.estimate){
+    try{
+      const est = await navigator.storage.estimate();
+      const usedMB = (est.usage/1024/1024).toFixed(0);
+      const quotaMB = (est.quota/1024/1024).toFixed(0);
+      const pct = est.quota ? Math.round(100*est.usage/est.quota) : 0;
+      const persistant = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+      infoStockage = `<div style="font-size:11px;color:var(--stone);margin-top:6px">
+        Stockage : ${usedMB} Mo / ${quotaMB} Mo (${pct}%) · persistance ${persistant===true?'✅ accordée':persistant===false?'❌ non accordée':'inconnue'}
+      </div>`;
+    } catch(_){}
+  }
+
   const resultats = [];
   let totalOk = 0, totalFantomes = 0;
   db.arbres.forEach(a=>{
@@ -6644,6 +6660,7 @@ async function diagnostiquerPhotos(){
   <div class="modal-body">
     <div style="background:var(--moss-light);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px">
       <strong>${totalOk}</strong> photos présentes sur cet appareil · <strong style="color:var(--rust)">${totalFantomes}</strong> manquantes (fantômes) sur <strong>${resultats.length}</strong> arbre${resultats.length>1?'s':''}
+      ${infoStockage}
     </div>
     ${resultats.length ? `
     <div style="max-height:400px;overflow-y:auto">
@@ -7912,6 +7929,15 @@ async function syncAuDemarrage(){
 }
 
 async function initialiser(){
+  // Demander au navigateur de traiter ce stockage comme persistant (réduit,
+  // sans garantie sur iOS, le risque d'éviction silencieuse d'IndexedDB/
+  // localStorage sous pression de stockage).
+  if(navigator.storage && navigator.storage.persist){
+    try{
+      const dejaPersistant = await navigator.storage.persisted?.();
+      if(!dejaPersistant) await navigator.storage.persist();
+    } catch(_){}
+  }
   // 1. Essayer de charger les données depuis localStorage
   // Essayer d'abord localStorage, sinon la collection intégrée
   const _savedRaw = localStorage.getItem(STORAGE_KEY);
