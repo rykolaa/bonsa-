@@ -54,6 +54,11 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .mobile-dropdown .nav-tab.active{background:var(--moss)}
 .mobile-dropdown .mob-btn{display:flex;align-items:center;gap:10px;padding:10px 14px;border:none;border-radius:6px;color:#fff;font-family:var(--ff-body);font-size:14px;cursor:pointer;width:100%;text-align:left}
 @media(max-width:700px){
+  /* Confort de lecture : agrandit tout (texte + interface) de ~15% sur mobile,
+     sans avoir à retoucher les centaines de tailles de police individuelles.
+     Appliqué sur html (pas body) pour que les éléments position:fixed suivent
+     correctement le zoom, comme un zoom de page natif. */
+  html{zoom:1.15}
   .topbar{padding:0 12px;gap:8px;position:relative}
   .logo-kanji{display:none}
   .logo{font-size:16px}
