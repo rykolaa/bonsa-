@@ -428,6 +428,10 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
       <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this);toggleMobileMenu()">
     </label>
     <button class="mob-btn" style="background:#7c3aed" onclick="ouvrirSyncModal();toggleMobileMenu()">🔄 Synchroniser</button>
+    <hr style="border-color:rgba(255,255,255,.1);margin:4px 0">
+    <button class="mob-btn" style="background:#4a5568" onclick="diagnostiquerPhotos();toggleMobileMenu()">🔎 Diagnostic photos manquantes</button>
+    <button class="mob-btn" style="background:#4a5568" onclick="detecterDoublonsArbres();toggleMobileMenu()">🔍 Détecter les doublons</button>
+    <button class="mob-btn" style="background:#8b4a2f" onclick="nettoyerTousFantomes();toggleMobileMenu()">🧹 Nettoyer les fantômes</button>
   </div>
   <div class="body">
     <div class="sidebar" id="sidebar">
