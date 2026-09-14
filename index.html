@@ -59,6 +59,11 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
      Appliqué sur html (pas body) pour que les éléments position:fixed suivent
      correctement le zoom, comme un zoom de page natif. */
   html{zoom:1.27}
+  /* Avec le zoom ci-dessus, 92vh peut déborder de l'espace réellement visible
+     sur iPhone (barre d'adresse Safari, encoche) et pousser le pied de page
+     (bouton Enregistrer) hors de l'écran sur les longs formulaires. dvh suit
+     la hauteur réellement visible ; 80vh reste une limite de secours. */
+  .modal{max-height:80vh;max-height:80dvh}
   .topbar{padding:0 12px;gap:8px;position:relative}
   .logo-kanji{display:none}
   .logo{font-size:16px}
