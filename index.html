@@ -6359,22 +6359,45 @@ function ouvrirIDB(){
         db.createObjectStore(IDB_STORE, {keyPath:'key'});
       }
     };
-    req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+    req.onsuccess = e => {
+      _idb = e.target.result;
+      // Le navigateur peut fermer la connexion de son propre chef (pression
+      // mémoire, notamment sur iOS pendant un gros import) ; sans ce handler,
+      // _idb restait une référence morte et toute transaction suivante
+      // échouait avec "The database connection is closing".
+      _idb.onclose = () => { _idb = null; };
+      resolve(_idb);
+    };
     req.onerror = () => reject(req.error);
   });
+}
+
+// Exécute une opération IDB avec une nouvelle tentative si la connexion
+// s'est fermée entre-temps (cf. ouvrirIDB ci-dessus).
+async function _idbAvecRetry(fn){
+  const db1 = await ouvrirIDB();
+  try{
+    return await fn(db1);
+  } catch(err){
+    if(String(err.message||'').includes('closing') || String(err.message||'').includes('closed')){
+      _idb = null;
+      const db2 = await ouvrirIDB();
+      return await fn(db2);
+    }
+    throw err;
+  }
 }
 
 // Clé unique : "arbreId_photoId"
 function _photoKey(arbreId, photoId){ return `${arbreId}_${photoId}`; }
 
 async function idbSauverPhoto(arbreId, photoId, dataUrl){
-  const db = await ouvrirIDB();
-  return new Promise((resolve, reject)=>{
+  return _idbAvecRetry(db => new Promise((resolve, reject)=>{
     const tx = db.transaction(IDB_STORE, 'readwrite');
     tx.objectStore(IDB_STORE).put({key: _photoKey(arbreId, photoId), dataUrl});
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
-  });
+  }));
 }
 
 async function idbLirePhoto(arbreId, photoId){
