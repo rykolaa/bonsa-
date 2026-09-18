@@ -8122,6 +8122,7 @@ function masseAppliquer(champ){
   render();
 }
 
+
 function masseAjouterTravail(){
   document.getElementById('masse-menu').style.display='none';
   const ids = [...etiqSel];
@@ -8184,12 +8185,19 @@ function masseAjouterTravailRealise(){
       <div style="font-size:13px;color:var(--stone);margin-bottom:12px">${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
         <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Type de travail</label>
-          <select id="mtr-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TRAVAUX_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+          <select id="mtr-type" onchange="mtrUpdateCoutUI()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TRAVAUX_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
         <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Date du travail</label>
           <input id="mtr-date" type="date" value="${today}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
         <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Description / Observations</label>
           <textarea id="mtr-desc" rows="2" placeholder="Décrivez le travail effectué…" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></textarea></div>
-        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Coût (CHF)</label>
+        <div id="mtr-cout-taille-wrap" style="display:none;background:var(--moss-light);border-radius:6px;padding:10px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--moss);font-weight:600">
+            <input type="checkbox" id="mtr-par-taille" checked onchange="mtrUpdateCoutUI()">
+            🎋 Coût selon la taille de chaque arbre
+          </label>
+          <div id="mtr-cout-taille-info" style="font-size:11px;color:var(--stone);margin-top:6px;line-height:1.6"></div>
+        </div>
+        <div id="mtr-cout-manuel-wrap"><label style="font-size:12px;font-weight:600;color:var(--stone)">Coût (CHF)</label>
           <input id="mtr-cout" type="number" min="0" value="0" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -8198,6 +8206,23 @@ function masseAjouterTravailRealise(){
       </div>
     </div>`;
   ov.style.display='flex';
+  mtrUpdateCoutUI();
+}
+
+function mtrUpdateCoutUI(){
+  const typeNom = document.getElementById('mtr-type')?.value;
+  const tt = getTravaux().find(t=>t.nom===typeNom);
+  const hasTaille = !!(tt && tt.couts_taille && tt.couts_taille.some(v=>v!=null && v>0));
+  const wrap = document.getElementById('mtr-cout-taille-wrap');
+  const info = document.getElementById('mtr-cout-taille-info');
+  const manuelWrap = document.getElementById('mtr-cout-manuel-wrap');
+  const cb = document.getElementById('mtr-par-taille');
+  if(wrap) wrap.style.display = hasTaille ? 'block' : 'none';
+  const parTailleActif = hasTaille && cb && cb.checked;
+  if(info) info.innerHTML = parTailleActif
+    ? TAILLE_CATS.map((c,i)=>`${c} : ${tt.couts_taille[i]||0} CHF`).join('<br>')
+    : '';
+  if(manuelWrap) manuelWrap.style.display = parTailleActif ? 'none' : 'block';
 }
 
 function masseAppliquerTravailRealise(){
@@ -8206,11 +8231,21 @@ function masseAppliquerTravailRealise(){
   const type  = document.getElementById('mtr-type')?.value||'';
   const date  = document.getElementById('mtr-date')?.value||'';
   const desc  = document.getElementById('mtr-desc')?.value||'';
-  const cout  = parseFloat(document.getElementById('mtr-cout')?.value)||0;
+  const coutManuel = parseFloat(document.getElementById('mtr-cout')?.value)||0;
+  const cb = document.getElementById('mtr-par-taille');
+  const tt = getTravaux().find(t=>t.nom===type);
+  const parTaille = !!(cb && cb.checked && tt && tt.couts_taille && tt.couts_taille.some(v=>v!=null && v>0));
   if(!type||!date) return;
   arbres.forEach(a=>{
     if(!a.travaux) a.travaux=[];
     const photosLinked = (a.photos||[]).filter(p=>p.date===date).map(p=>p.id);
+    let cout = coutManuel;
+    if(parTaille){
+      const cat = getTailleCategorie(a);
+      const idx = TAILLE_CATS.indexOf(cat);
+      const coutTaille = idx>=0 ? tt.couts_taille[idx] : null;
+      cout = (coutTaille!=null && coutTaille>0) ? coutTaille : (tt.cout||coutManuel||0);
+    }
     a.travaux.unshift({date,type,desc,cout,photosLinked});
   });
   autoSave();
@@ -8218,6 +8253,7 @@ function masseAppliquerTravailRealise(){
   etiqSel.clear();
   render();
 }
+
 
 function masseSante(){
   document.getElementById('masse-menu').style.display='none';
