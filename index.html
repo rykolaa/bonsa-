@@ -514,6 +514,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
     <button onclick="masseAjouterTravailRealise()" class="masse-btn">✅ Ajouter un travail réalisé</button>
     <button onclick="masseAjouterTravail()"     class="masse-btn">🔧 Ajouter un travail planifié</button>
+    <button onclick="masseSupprimerTravail()"   class="masse-btn" style="color:#b42814">🗑 Supprimer un travail</button>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
     <button onclick="masseSante()"              class="masse-btn">📊 Normaliser la santé à 85%</button>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
@@ -8249,6 +8250,72 @@ function masseAppliquerTravailRealise(){
     a.travaux.unshift({date,type,desc,cout,photosLinked});
   });
   autoSave();
+  closeModal();
+  etiqSel.clear();
+  render();
+}
+
+function masseSupprimerTravail(){
+  document.getElementById('masse-menu').style.display='none';
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+
+  // Regroupe les travaux identiques (même type/date/desc/coût) présents sur les arbres sélectionnés
+  const map = new Map();
+  arbres.forEach(a=>{
+    (a.travaux||[]).forEach(t=>{
+      const key = [t.type, t.date, t.desc||'', t.cout||0].join('|||');
+      if(!map.has(key)) map.set(key, {type:t.type, date:t.date, desc:t.desc||'', cout:t.cout||0, count:0});
+      map.get(key).count++;
+    });
+  });
+  const entries = [...map.values()].sort((a,b)=> b.count-a.count || (b.date>a.date?1:-1));
+  if(!entries.length){ alert('Aucun travail enregistré sur les arbres sélectionnés.'); return; }
+
+  window._mstEntries = entries;
+
+  const m = document.getElementById('modal');
+  const ov = document.getElementById('modal-overlay');
+  m.innerHTML = `
+    <div style="padding:24px;max-width:460px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px">🗑 Supprimer un travail</div>
+      <div style="font-size:13px;color:var(--stone);margin-bottom:12px">Choisis le travail à retirer parmi les ${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
+      <div style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+        ${entries.map((e,i)=>`
+          <label style="display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
+            <input type="radio" name="mst-choix" value="${i}" ${i===0?'checked':''} style="margin-top:3px">
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600">${TRAVAUX_ICONS[e.type]||'📝'} ${esc(e.type)} — ${fmtDate(e.date)}</div>
+              ${e.desc?`<div style="font-size:12px;color:var(--stone);margin-top:2px">${esc(e.desc)}</div>`:''}
+              <div style="font-size:11px;color:var(--stone);margin-top:2px">${e.cout?e.cout+' CHF · ':''}présent sur ${e.count} arbre${e.count>1?'s':''}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="closeModal()" style="padding:8px 16px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer">Annuler</button>
+        <button onclick="masseSupprimerTravailConfirmer()" style="padding:8px 18px;background:#b42814;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Supprimer</button>
+      </div>
+    </div>`;
+  ov.style.display='flex';
+}
+
+function masseSupprimerTravailConfirmer(){
+  const choix = document.querySelector('input[name="mst-choix"]:checked');
+  const entries = window._mstEntries||[];
+  const e = choix ? entries[parseInt(choix.value)] : null;
+  if(!e) return closeModal();
+  if(!confirm(`Supprimer "${e.type}" du ${fmtDate(e.date)} sur ${e.count} arbre${e.count>1?'s':''} ? Cette action est irréversible.`)) return;
+
+  const ids = [...etiqSel];
+  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  arbres.forEach(a=>{
+    if(!a.travaux) return;
+    const idxRemove = a.travaux.findIndex(t=> t.type===e.type && t.date===e.date && (t.desc||'')===e.desc && (t.cout||0)===e.cout);
+    if(idxRemove>-1) a.travaux.splice(idxRemove,1);
+  });
+  autoSave();
+  delete window._mstEntries;
   closeModal();
   etiqSel.clear();
   render();
