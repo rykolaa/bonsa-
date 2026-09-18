@@ -2884,6 +2884,9 @@ function openDetail(id){
         ${a.alt?`<div class="info-block"><div class="info-block-label">Altitude</div><div class="info-block-val" style="font-size:12px">${a.alt} m</div></div>`:''}
         ${a.gps?`<div class="info-block"><div class="info-block-label">GPS</div><div class="info-block-val" style="font-size:12px">${a.gps}</div></div>`:''}
         ${a.donnateur?`<div class="info-block"><div class="info-block-label">Donateur</div><div class="info-block-val" style="font-size:12px">${a.donnateur}</div></div>`:''}
+        ${a.origine==='Semis' && a.semis_source?`<div class="info-block" style="grid-column:1/-1"><div class="info-block-label">Provenance des semis</div><div class="info-block-val" style="font-size:12px">${a.semis_source}</div></div>`:''}
+        ${a.origine==='Bouture' && a.bouture_source?`<div class="info-block" style="grid-column:1/-1"><div class="info-block-label">Provenance de la bouture</div><div class="info-block-val" style="font-size:12px">${a.bouture_source}</div></div>`:''}
+        ${a.origine==='Marcotte' && a.marcotte_source?`<div class="info-block" style="grid-column:1/-1"><div class="info-block-label">Arbre d'origine (marcotte)</div><div class="info-block-val" style="font-size:12px">${a.marcotte_source}</div></div>`:''}
       </div>
 
       <!-- Notes -->
