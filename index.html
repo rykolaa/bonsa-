@@ -402,6 +402,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');detecterDoublonsArbres()">🔍 Détecter les doublons</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');diagnostiquerPhotos()">🔎 Diagnostic photos manquantes</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');reparerRempotagesDupliquesManuel()">🪴 Réparer les pots/rempotages</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');repairerPhotos()">🔃 Orienter photos</button>
         <label class="topbar-dd-btn" style="cursor:pointer">📥 Import photos<input type="file" accept=".json" multiple style="display:none" onchange="toggleDropdown('outils-dd');importerPhotosLots(this)"></label>
       </div>
@@ -2906,7 +2907,7 @@ function openDetail(id){
       <div class="tl" style="padding-left:6px">
         ${[...(a.travaux||[])].sort((x,y)=>String(y.date||'').localeCompare(String(x.date||''))).map((t,i,arr)=>{
           const linkedPhotos = t.photosLinked&&t.photosLinked.length?(a.photos||[]).filter(p=>t.photosLinked.includes(p.id)):[];
-          const remp = t.remp_id ? db.rempotages.find(r=>r.id===t.remp_id) : null;
+          const remp = t.remp_id ? db.rempotages.find(r=>r.id===t.remp_id && r.arbre_id===a.id) : null;
           const pot = remp?.pot_id ? db.pots.find(p=>p.id===remp.pot_id) : null;
           const mel = remp?.melange_id ? db.melanges.find(m=>m.id===remp.melange_id) : null;
           const potCover = pot ? (pot.photos||[]).find(ph=>ph.dataUrl) : null;
@@ -3312,7 +3313,7 @@ function openTravailModal(arbreId, travailIdx){
       ${(()=>{
         // Chercher un rempotage existant lié à ce travail
         const rempId = trav?.remp_id || null;
-        const r = rempId ? db.rempotages.find(x=>x.id===rempId) : null;
+        const r = rempId ? db.rempotages.find(x=>x.id===rempId && x.arbre_id===arbreId) : null;
         return `
       <div class="form-row">
         <div class="fg"><label>Pot utilisé</label>
@@ -7594,6 +7595,7 @@ async function _chargerCollection(collection, preserverPhotos=false){
   // Recharge les photos depuis IndexedDB par petits lots (au lieu de tout d'un coup)
   // pour éviter un second pic mémoire juste après celui du transfert ci-dessus.
   await chargerPhotosDepuisIDBProgressif();
+  reparerRempotagesDupliques();
   sauvegarderLocal();
 }
 
@@ -7942,6 +7944,7 @@ async function syncAuDemarrage(){
 
       // Recharger les photos depuis IndexedDB (lecture seule, par petits lots)
       await chargerPhotosDepuisIDBProgressif();
+      reparerRempotagesDupliques();
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         version:4, savedAt:gistDate.toISOString(),
@@ -7958,6 +7961,40 @@ async function syncAuDemarrage(){
       if(ind){ ind.style.display='block'; ind.textContent='✅ À jour'; setTimeout(()=>{ ind.style.display='none'; }, 2000); }
     }
   }catch(e){ console.warn('Sync démarrage:', e); }
+}
+
+// Répare les rempotages dont l'identifiant (id) est en doublon dans la collection —
+// séquelle d'anciens imports où chaque lot avait son propre compteur repartant de 1.
+// Ce doublon fait que db.rempotages.find(id) peut retrouver le rempotage d'un AUTRE
+// arbre (celui qui partage le même numéro), ce qui affiche le mauvais pot sur la fiche.
+function reparerRempotagesDupliques(){
+  if(!db.rempotages || !db.rempotages.length) return;
+  if(!db.nextRempId) db.nextRempId = Math.max(0, ...db.rempotages.map(r=>r.id||0)) + 1;
+  const vus = new Set();
+  let corrections = 0;
+  db.rempotages.forEach(r=>{
+    if(vus.has(r.id)){
+      const ancienId = r.id;
+      r.id = db.nextRempId++;
+      const arbre = db.arbres.find(a=>a.id===r.arbre_id);
+      const t = arbre?.travaux?.find(t=>t.remp_id===ancienId && t.type==='Rempotage');
+      if(t) t.remp_id = r.id;
+      corrections++;
+    } else {
+      vus.add(r.id);
+    }
+  });
+  if(corrections>0){
+    console.log('Réparation rempotages : '+corrections+' identifiant(s) en doublon corrigé(s).');
+    sauvegarderLocal();
+  }
+  return corrections;
+}
+
+function reparerRempotagesDupliquesManuel(){
+  const n = reparerRempotagesDupliques();
+  render();
+  afficherIndicateur(n>0 ? `✅ ${n} rempotage${n>1?'s':''} corrigé${n>1?'s':''}` : '✓ Aucun doublon trouvé');
 }
 
 async function initialiser(){
@@ -8006,6 +8043,7 @@ async function initialiser(){
         if(collection.nextProdId) db.nextProdId = collection.nextProdId;
         // 2. Recharger les photos depuis IndexedDB
         await chargerPhotosDepuisIDBProgressif();
+        reparerRempotagesDupliques();
         render();
         const savedAt = data.savedAt ? new Date(data.savedAt).toLocaleString('fr-CH') : '';
         const nbPhotos = db.arbres.reduce((s,a)=>(s+(a.photos||[]).filter(p=>p.dataUrl).length),0);
