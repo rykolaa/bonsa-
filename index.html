@@ -9089,7 +9089,23 @@ async function syncEnvoyer(){
     const arbres = raw.arbres;
     const meta = {...raw, arbres:[]};
     const CHUNK = 50;
-    const files = {'yugen_meta.json': {content: JSON.stringify(meta)}};
+    const metaJSON = JSON.stringify(meta);
+    const files = {'yugen_meta.json': {content: metaJSON}};
+
+    // Diagnostic : taille de yugen_meta.json et de chacun de ses champs, pour repérer
+    // ce qui approche ou dépasse la limite de ~1 Mo par fichier de Gist chez GitHub.
+    const metaTailleKo = Math.round(new Blob([metaJSON]).size/1024);
+    const detailChamps = Object.keys(meta)
+      .map(k=>({k, ko: Math.round(new Blob([JSON.stringify(meta[k])]).size/1024)}))
+      .sort((a,b)=>b.ko-a.ko)
+      .slice(0,6)
+      .map(x=>x.k+': '+x.ko+' Ko')
+      .join(' · ');
+    console.log('yugen_meta.json = '+metaTailleKo+' Ko — '+detailChamps);
+    if(metaTailleKo > 900 && status){
+      status.innerHTML = '⚠️ yugen_meta.json = <strong>'+metaTailleKo+' Ko</strong> (proche/au-delà de la limite GitHub de 1024 Ko)<br><span style="font-size:11px">'+detailChamps+'</span>';
+    }
+
     for(let i=0; i*CHUNK < arbres.length; i++){
       const chunk = arbres.slice(i*CHUNK, (i+1)*CHUNK);
       files['yugen_arbres_'+i+'.json'] = {content: JSON.stringify(chunk)};
@@ -9130,8 +9146,13 @@ async function syncEnvoyer(){
     const _now = new Date();
     localStorage.setItem('sync_saved_at', _now.toLocaleString('fr-CH'));
     localStorage.setItem('sync_saved_at_iso', _now.toISOString());
-    if(status) status.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong>';
+    if(status) status.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong><br><span style="font-size:11px;color:var(--stone)">yugen_meta.json : '+metaTailleKo+' Ko — '+detailChamps+'</span>';
     ouvrirSyncModal();
+    // ouvrirSyncModal() régénère #sync-status (vide) — on réinjecte le diagnostic après coup
+    setTimeout(()=>{
+      const s2 = document.getElementById('sync-status');
+      if(s2) s2.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong><br><span style="font-size:11px;color:var(--stone)">yugen_meta.json : '+metaTailleKo+' Ko — '+detailChamps+'</span>';
+    }, 30);
   } catch(e){
     if(status) status.textContent = '❌ Erreur : '+e.message;
     console.error(e);
