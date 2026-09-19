@@ -9054,7 +9054,7 @@ function ouvrirSyncModal(){
       <div style="display:flex;gap:6px">
         <input id="sync-code-input" type="text" placeholder="Collez ou tapez le code…"
           style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:monospace;letter-spacing:.04em"
-          value="${binId}" oninput="this.value=this.value.replace(/[^a-f0-9]/gi,'')">
+          value="" oninput="this.value=this.value.replace(/[^a-f0-9]/gi,'')">
         <button onclick="syncRecevoir()" style="padding:9px 14px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
           ↓ Recevoir
         </button>
@@ -9166,6 +9166,10 @@ async function syncRecevoir(){
   const code  = (input?.value||'').trim();
   const status = document.getElementById('sync-status');
   if(!code){ if(status) status.textContent='⚠️ Entrez un code'; return; }
+  if(code.length !== 32){
+    if(status) status.textContent='⚠️ Code incomplet ('+code.length+'/32 caractères) — recopiez-le en entier';
+    return;
+  }
   if(status) status.textContent='⏳ Récupération…';
   try{
     const headers = {'Accept':'application/vnd.github+json'};
