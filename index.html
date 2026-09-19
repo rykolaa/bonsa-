@@ -404,6 +404,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');reparerRempotagesDupliquesManuel()">🪴 Réparer les pots/rempotages</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');diagnostiquerStockage()">🔎 Diagnostic stockage</button>
+        <button class="topbar-dd-btn" style="color:#b42814" onclick="toggleDropdown('outils-dd');if(confirm('Vider le cache de l\'app (service worker + fichiers hors-ligne) et recharger ? À utiliser si l\'app semble figée sur une ancienne version malgré un redéploiement.')) forcerMiseAJourApp()">🔄 Forcer la mise à jour de l'app</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');repairerPhotos()">🔃 Orienter photos</button>
         <label class="topbar-dd-btn" style="cursor:pointer">📥 Import photos<input type="file" accept=".json" multiple style="display:none" onchange="toggleDropdown('outils-dd');importerPhotosLots(this)"></label>
       </div>
@@ -441,6 +442,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <button class="mob-btn" style="background:#4a5568" onclick="detecterDoublonsArbres();toggleMobileMenu()">🔍 Détecter les doublons</button>
     <button class="mob-btn" style="background:#8b4a2f" onclick="nettoyerTousFantomes();toggleMobileMenu()">🧹 Nettoyer les fantômes</button>
     <button class="mob-btn" style="background:#8b4a2f" onclick="reparerRempotagesDupliquesManuel();toggleMobileMenu()">🪴 Réparer les pots/rempotages</button>
+    <button class="mob-btn" style="background:#b42814" onclick="if(confirm('Vider le cache de l\'app (service worker + fichiers hors-ligne) et recharger ? À utiliser si l\'app semble figée sur une ancienne version malgré un redéploiement.')) forcerMiseAJourApp()">🔄 Forcer la mise à jour de l'app</button>
   </div>
   <div class="body">
     <div class="sidebar" id="sidebar">
@@ -9411,6 +9413,29 @@ if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./service-worker.js')
       .catch(err => console.warn('Service worker non enregistré :', err));
   });
+}
+
+// Force la purge complète du cache applicatif (service worker + Cache Storage),
+// utile quand un appareil (typiquement iOS/Safari en PWA) continue de servir une
+// ancienne version de l'app malgré un nouveau déploiement + vidage manuel des
+// données de site — le vidage Safari ne désenregistre pas toujours fiablement
+// le service worker actif.
+async function forcerMiseAJourApp(){
+  try{
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for(const r of regs) await r.unregister();
+    }
+    if(window.caches && caches.keys){
+      const noms = await caches.keys();
+      for(const n of noms) await caches.delete(n);
+    }
+    alert('Cache applicatif vidé (' + (window.caches ? 'y compris service worker' : 'localStorage seulement') + '). L\'app va se recharger.');
+  } catch(e){
+    alert('Erreur pendant le nettoyage : ' + e.message + '\nRechargement quand même.');
+  } finally {
+    location.href = location.pathname + '?forcemaj=' + Date.now();
+  }
 }
 </script>
 </body>
