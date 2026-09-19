@@ -403,6 +403,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');diagnostiquerPhotos()">🔎 Diagnostic photos manquantes</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');nettoyerTousFantomes()">🧹 Nettoyer les fantômes</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');reparerRempotagesDupliquesManuel()">🪴 Réparer les pots/rempotages</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');diagnostiquerStockage()">🔎 Diagnostic stockage</button>
         <button class="topbar-dd-btn" onclick="toggleDropdown('outils-dd');repairerPhotos()">🔃 Orienter photos</button>
         <label class="topbar-dd-btn" style="cursor:pointer">📥 Import photos<input type="file" accept=".json" multiple style="display:none" onchange="toggleDropdown('outils-dd');importerPhotosLots(this)"></label>
       </div>
@@ -8002,6 +8003,77 @@ function reparerRempotagesDupliquesManuel(){
   const n = reparerRempotagesDupliques();
   render();
   afficherIndicateur(n>0 ? `✅ ${n} rempotage${n>1?'s':''} corrigé${n>1?'s':''}` : '✓ Aucun doublon trouvé');
+}
+
+// ── DIAGNOSTIC STOCKAGE ──────────────────────────────────────────────────────
+async function diagnostiquerStockage(){
+  const lignes = [];
+
+  // 1) Quota global du navigateur pour ce site (API Storage — disponible sur iOS 14.5+)
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const est = await navigator.storage.estimate();
+      const mo = n => (n/1024/1024).toFixed(2)+' Mo';
+      lignes.push(`Quota total du site : ${mo(est.quota||0)}`);
+      lignes.push(`Utilisé (tout compris) : ${mo(est.usage||0)}`);
+      if(est.usageDetails){
+        Object.entries(est.usageDetails).forEach(([k,v])=>lignes.push(`  · ${k} : ${mo(v)}`));
+      }
+    } else {
+      lignes.push('API de quota non disponible sur ce navigateur.');
+    }
+  } catch(e){ lignes.push('Erreur quota : '+e.message); }
+
+  // 2) Contenu détaillé de localStorage (clé par clé)
+  try{
+    let totalLS = 0;
+    const detail = [];
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      const v = localStorage.getItem(k)||'';
+      const taille = new Blob([v]).size;
+      totalLS += taille;
+      detail.push({k,taille});
+    }
+    detail.sort((a,b)=>b.taille-a.taille);
+    lignes.push('');
+    lignes.push(`localStorage — ${detail.length} clé(s), ${(totalLS/1024).toFixed(1)} Ko au total :`);
+    detail.slice(0,10).forEach(d=>lignes.push(`  · ${d.k} : ${(d.taille/1024).toFixed(1)} Ko`));
+  } catch(e){ lignes.push('Erreur lecture localStorage : '+e.message); }
+
+  // 3) Test d'écriture réel : jusqu'où peut-on écrire avant l'échec ?
+  try{
+    const testKey = '__yugen_test_quota__';
+    let paliers = [10,50,100,200,500,1000,2000,4000]; // Ko
+    let dernierOk = 0;
+    for(const ko of paliers){
+      try{
+        localStorage.setItem(testKey, 'x'.repeat(ko*1024));
+        dernierOk = ko;
+      } catch(e){
+        break;
+      }
+    }
+    localStorage.removeItem(testKey);
+    lignes.push('');
+    lignes.push(`Test d'écriture : dernier palier réussi = ${dernierOk} Ko`);
+  } catch(e){ lignes.push('Erreur test écriture : '+e.message); }
+
+  const texte = lignes.join('\n');
+  console.log(texte);
+
+  const m = document.getElementById('modal');
+  const ov = document.getElementById('modal-overlay');
+  m.innerHTML = `
+    <div style="padding:24px;max-width:520px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px">🔎 Diagnostic stockage</div>
+      <textarea readonly style="width:100%;height:320px;font-family:monospace;font-size:12px;padding:10px;border:1px solid var(--border);border-radius:8px;white-space:pre">${texte}</textarea>
+      <div style="font-size:11px;color:var(--stone);margin-top:8px">Envoie une capture d'écran (ou copie ce texte) pour analyse.</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button onclick="closeModal()" style="padding:8px 18px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer">Fermer</button>
+      </div>
+    </div>`;
+  ov.style.display='flex';
 }
 
 async function initialiser(){
