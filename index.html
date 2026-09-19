@@ -7026,16 +7026,23 @@ function sauvegarderJSON(){
       ...a,
       photos: (a.photos||[]).map(p=>({...p, dataUrl:null})) // garder les métadonnées, retirer le contenu
     }));
+    // Les pots peuvent eux aussi porter des photos avec dataUrl intégré — sans cet
+    // allègement, un export peut peser 20+ Mo rien qu'à cause de quelques centaines
+    // de photos de pots, alors que les photos d'arbres sont déjà dans IndexedDB.
+    const potsLeger = (db.pots||[]).map(p=>({
+      ...p,
+      photos: (p.photos||[]).map(ph=>({...ph, dataUrl:null}))
+    }));
     const payload = JSON.stringify({
       version:5, savedAt:new Date().toISOString(),
       nextId:db.nextId, nextPotId:db.nextPotId||1,
       nextSubId:db.nextSubId||1, nextMelId:db.nextMelId||1,
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
-      pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
+      pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
       especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger,
-      _note:'Photos stockées dans IndexedDB du navigateur. Utilisez "Export photos" pour une sauvegarde complète.'
+      _note:'Photos (arbres et pots) stockées dans IndexedDB du navigateur. Utilisez "Export photos" pour une sauvegarde complète.'
     });
     const blob = new Blob([payload], {type:'application/json'});
     _telechargerBlob(blob, 'Yugen_Bonsai_'+_dateStr()+'.json');
