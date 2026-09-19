@@ -9177,11 +9177,18 @@ async function syncRecevoir(){
     const resp = await fetch('https://api.github.com/gists/'+code+'?t='+Date.now(), {headers, cache:'no-store'});
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
+    // Diagnostic : liste tous les fichiers du Gist tels que GitHub les rapporte (nom,
+    // taille annoncée, drapeau truncated, longueur réelle du contenu reçu) — utile pour
+    // voir exactement ce que l'API renvoie plutôt que de deviner.
+    const diagFichiers = Object.entries(data.files||{})
+      .map(([nom,info])=>nom+'('+(info.size||0)+'o'+(info.truncated?',TRONQUÉ':'')+')')
+      .join(' · ');
+    console.log('Gist reçu — fichiers :', diagFichiers);
     // Diagnostic : GitHub tronque le champ "content" des fichiers de Gist trop volumineux
     // (au-delà d'environ 1 Mo) et signale ça via data.files[x].truncated === true.
     const metaFileInfo = data.files?.['yugen_meta.json'];
     if(metaFileInfo?.truncated){
-      throw new Error('yugen_meta.json tronqué par GitHub (fichier trop volumineux) — les pots/données au-delà de la coupure sont perdus à la lecture');
+      throw new Error('yugen_meta.json tronqué par GitHub (taille rapportée : '+(metaFileInfo.size||'?')+' octets, content reçu : '+((metaFileInfo.content||'').length)+' caractères) — Tous les fichiers : '+diagFichiers);
     }
     // Lire l'index
     const idxContent = data.files?.['yugen_index.json']?.content;
