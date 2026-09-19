@@ -7233,15 +7233,20 @@ async function sauvegarderLocal(){
       }
     }
   } catch(e){
-    console.warn('localStorage plein:', e.message);
+    console.warn('Échec sauvegarde locale:', e);
     // Échec silencieux critique : les données restent correctes en mémoire mais
     // ne sont PAS persistées — elles disparaîtront au prochain chargement de l'app.
-    // On le rend visible au lieu de le laisser invisible dans la console.
+    // On le rend visible au lieu de le laisser invisible dans la console, et on
+    // affiche la VRAIE cause plutôt que de toujours accuser un manque d'espace
+    // (un bug JS ou une donnée non sérialisable donne une tout autre erreur).
+    const estQuota = e.name==='QuotaExceededError' || e.code===22 || e.code===1014;
     const ind = document.getElementById('save-indicator');
     if(ind){
       ind.style.display='block';
       ind.style.color='#e74c3c';
-      ind.textContent='❌ Stockage plein — NON sauvegardé (fermez des photos ou libérez de l\'espace)';
+      ind.textContent = estQuota
+        ? '❌ Stockage plein — NON sauvegardé (fermez des photos ou libérez de l\'espace)'
+        : '❌ Échec sauvegarde ('+(e.name||'Erreur')+') — NON sauvegardé : '+(e.message||'').substring(0,80);
     }
   }
 }
