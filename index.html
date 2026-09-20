@@ -7858,16 +7858,17 @@ async function syncEnvoyerAuto(){
   try{
     const raw = _buildSyncPayloadRaw();
     const arbres = raw.arbres;
-    const meta = {...raw, arbres:[]};
     const CHUNK = 50;
+    // Le compte des morceaux ("chunks") est fusionné directement dans 0_yugen_meta.json
+    // au lieu d'un fichier yugen_index.json séparé : GitHub tronque les fichiers d'un
+    // Gist par ordre alphabétique une fois la taille totale dépassée (~1 Mo), et un
+    // fichier "index" trié après tous les "arbres_N" finissait par disparaître
+    // entièrement — alors qu'il est indispensable pour savoir combien de morceaux lire.
+    const meta = {...raw, arbres:[], _chunks:Math.ceil(arbres.length/CHUNK), _total:arbres.length};
     const files = {'0_yugen_meta.json':{content:JSON.stringify(meta)}};
     for(let i=0; i*CHUNK < arbres.length; i++){
       files['yugen_arbres_'+i+'.json'] = {content:JSON.stringify(arbres.slice(i*CHUNK,(i+1)*CHUNK))};
     }
-    files['yugen_index.json'] = {content:JSON.stringify({
-      total:arbres.length, chunks:Math.ceil(arbres.length/CHUNK),
-      savedAt:new Date().toISOString()
-    })};
     const gistId = localStorage.getItem('sync_bin_id');
     const token = getGistToken();
     const headers = {'Content-Type':'application/json','Accept':'application/vnd.github+json'};
@@ -7911,14 +7912,14 @@ async function syncAuDemarrage(){
     const resp = await fetch('https://api.github.com/gists/'+gistId, {headers});
     if(!resp.ok) return;
     const data = await resp.json();
-    const idxContent = data.files?.['yugen_index.json']?.content;
-    if(!idxContent) return;
-    const idx = JSON.parse(idxContent);
+    const metaContent0 = data.files?.['0_yugen_meta.json']?.content;
+    if(!metaContent0) return;
+    const idx = JSON.parse(metaContent0);
     const gistDate = new Date(idx.savedAt);
     const localRaw = JSON.parse(localStorage.getItem("yugen_bonsai_collection")||"{}"); const localDate = new Date(localRaw.savedAt || localStorage.getItem("sync_saved_at_iso") || 0);
     if(gistDate - localDate > 30000){
       if(ind){ ind.style.display='block'; ind.textContent='🔄 Mise à jour…'; }
-      const chunks = idx.chunks || 1;
+      const chunks = idx._chunks || 1;
       const metaContent = data.files?.['0_yugen_meta.json']?.content;
       if(!metaContent) return;
       const collection = JSON.parse(metaContent);
@@ -9123,8 +9124,11 @@ async function syncEnvoyer(){
   try{
     const raw = _buildSyncPayloadRaw();
     const arbres = raw.arbres;
-    const meta = {...raw, arbres:[]};
     const CHUNK = 50;
+    // Le compte des morceaux est fusionné dans 0_yugen_meta.json (voir syncEnvoyerAuto
+    // pour l'explication) plutôt que dans un yugen_index.json séparé, trié après tous
+    // les "arbres_N" et donc perdu en premier si le total dépasse la limite GitHub.
+    const meta = {...raw, arbres:[], _chunks:Math.ceil(arbres.length/CHUNK), _total:arbres.length};
     const metaJSON = JSON.stringify(meta);
     const files = {'0_yugen_meta.json': {content: metaJSON}};
 
@@ -9146,11 +9150,6 @@ async function syncEnvoyer(){
       const chunk = arbres.slice(i*CHUNK, (i+1)*CHUNK);
       files['yugen_arbres_'+i+'.json'] = {content: JSON.stringify(chunk)};
     }
-    files['yugen_index.json'] = {content: JSON.stringify({
-      total: arbres.length,
-      chunks: Math.ceil(arbres.length/CHUNK),
-      savedAt: new Date().toISOString()
-    })};
 
     const gistId = localStorage.getItem('sync_bin_id');
     const headers = {'Content-Type':'application/json','Accept':'application/vnd.github+json'};
@@ -9224,22 +9223,19 @@ async function syncRecevoir(){
     if(metaFileInfo?.truncated){
       throw new Error('0_yugen_meta.json tronqué par GitHub (taille rapportée : '+(metaFileInfo.size||'?')+' octets, content reçu : '+((metaFileInfo.content||'').length)+' caractères) — Tous les fichiers : '+diagFichiers);
     }
-    // Lire l'index
-    const idxContent = data.files?.['yugen_index.json']?.content;
-    if(!idxContent) throw new Error('Fichier index introuvable — Tous les fichiers reçus : '+(diagFichiers||'(aucun)'));
-    const idx = JSON.parse(idxContent);
-    const chunks = idx.chunks || 1;
-    // Lire les métadonnées
+    // Lire les métadonnées (contient aussi désormais _chunks, l'ancien index séparé)
     const metaContent = data.files?.['0_yugen_meta.json']?.content;
-    if(!metaContent) throw new Error('Fichier meta introuvable');
+    if(!metaContent) throw new Error('Fichier meta introuvable — Tous les fichiers reçus : '+(diagFichiers||'(aucun)'));
     const collection = JSON.parse(metaContent);
-    // Lire les chunks d'arbres
+    const chunks = collection._chunks || 1;
+    // Lire les chunks d'arbres — si l'un d'eux est tronqué (Gist trop volumineux au
+    // total), on continue quand même avec les autres plutôt que de tout bloquer :
+    // mieux vaut recevoir 200 arbres sur 212 que zéro. L'utilisateur est prévenu.
     collection.arbres = [];
+    let chunkTronqueNb = 0;
     for(let i=0; i<chunks; i++){
       const chunkInfo = data.files?.['yugen_arbres_'+i+'.json'];
-      if(chunkInfo?.truncated){
-        throw new Error('yugen_arbres_'+i+'.json tronqué par GitHub — la collection totale (tous fichiers confondus) dépasse la limite ~1 Mo par Gist. Réduisez le nombre de photos/travaux ou contactez le support.');
-      }
+      if(chunkInfo?.truncated){ chunkTronqueNb++; continue; }
       const chunkContent = chunkInfo?.content;
       if(chunkContent){
         const chunk = JSON.parse(chunkContent);
@@ -9247,6 +9243,9 @@ async function syncRecevoir(){
       }
     }
     if(!collection.arbres||collection.arbres.length===0) throw new Error('Format non reconnu — arbres manquants');
+    if(chunkTronqueNb>0 && status){
+      status.innerHTML = '⚠️ '+chunkTronqueNb+' lot(s) d\'arbres tronqué(s) par GitHub (Gist trop volumineux au total) — '+collection.arbres.length+' arbre(s) reçu(s) quand même. Réduisez photos/travaux si possible.';
+    }
     const nbActuel = db.arbres.length;
     if(nbActuel>0){
       if(!confirm(nbActuel+' arbre'+(nbActuel>1?'s':'')+' en mémoire.\n\nOK = Remplacer par la sync\nAnnuler = Abandonner')) return;
@@ -9256,7 +9255,10 @@ async function syncRecevoir(){
     localStorage.setItem('sync_bin_id', code);
     localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
     render(); _hideLoading(); closeModal();
-    afficherIndicateur('✅ Sync reçue — '+collection.arbres.length+' arbres · '+db.pots.length+' pots · photos préservées');
+    afficherIndicateur(
+      (chunkTronqueNb>0 ? '⚠️ '+chunkTronqueNb+' lot(s) d\'arbres tronqué(s) — ' : '✅ Sync reçue — ')
+      + collection.arbres.length+' arbres · '+db.pots.length+' pots · photos préservées'
+    );
   } catch(e){
     if(status) status.textContent='❌ '+e.message;
     _hideLoading();
