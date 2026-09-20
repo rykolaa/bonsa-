@@ -7859,7 +7859,7 @@ async function syncEnvoyerAuto(){
     const arbres = raw.arbres;
     const meta = {...raw, arbres:[]};
     const CHUNK = 50;
-    const files = {'yugen_meta.json':{content:JSON.stringify(meta)}};
+    const files = {'0_yugen_meta.json':{content:JSON.stringify(meta)}};
     for(let i=0; i*CHUNK < arbres.length; i++){
       files['yugen_arbres_'+i+'.json'] = {content:JSON.stringify(arbres.slice(i*CHUNK,(i+1)*CHUNK))};
     }
@@ -7918,12 +7918,14 @@ async function syncAuDemarrage(){
     if(gistDate - localDate > 30000){
       if(ind){ ind.style.display='block'; ind.textContent='🔄 Mise à jour…'; }
       const chunks = idx.chunks || 1;
-      const metaContent = data.files?.['yugen_meta.json']?.content;
+      const metaContent = data.files?.['0_yugen_meta.json']?.content;
       if(!metaContent) return;
       const collection = JSON.parse(metaContent);
       collection.arbres = [];
       for(let i=0; i<chunks; i++){
-        const c = data.files?.['yugen_arbres_'+i+'.json']?.content;
+        const chunkInfo = data.files?.['yugen_arbres_'+i+'.json'];
+        if(chunkInfo?.truncated){ console.warn('yugen_arbres_'+i+'.json tronqué par GitHub — sync auto abandonnée'); return; }
+        const c = chunkInfo?.content;
         if(c) collection.arbres.push(...JSON.parse(c));
       }
       if(!collection.arbres?.length) return;
@@ -9092,9 +9094,9 @@ async function syncEnvoyer(){
     const meta = {...raw, arbres:[]};
     const CHUNK = 50;
     const metaJSON = JSON.stringify(meta);
-    const files = {'yugen_meta.json': {content: metaJSON}};
+    const files = {'0_yugen_meta.json': {content: metaJSON}};
 
-    // Diagnostic : taille de yugen_meta.json et de chacun de ses champs, pour repérer
+    // Diagnostic : taille de 0_yugen_meta.json et de chacun de ses champs, pour repérer
     // ce qui approche ou dépasse la limite de ~1 Mo par fichier de Gist chez GitHub.
     const metaTailleKo = Math.round(new Blob([metaJSON]).size/1024);
     const detailChamps = Object.keys(meta)
@@ -9103,9 +9105,9 @@ async function syncEnvoyer(){
       .slice(0,6)
       .map(x=>x.k+': '+x.ko+' Ko')
       .join(' · ');
-    console.log('yugen_meta.json = '+metaTailleKo+' Ko — '+detailChamps);
+    console.log('0_yugen_meta.json = '+metaTailleKo+' Ko — '+detailChamps);
     if(metaTailleKo > 900 && status){
-      status.innerHTML = '⚠️ yugen_meta.json = <strong>'+metaTailleKo+' Ko</strong> (proche/au-delà de la limite GitHub de 1024 Ko)<br><span style="font-size:11px">'+detailChamps+'</span>';
+      status.innerHTML = '⚠️ 0_yugen_meta.json = <strong>'+metaTailleKo+' Ko</strong> (proche/au-delà de la limite GitHub de 1024 Ko)<br><span style="font-size:11px">'+detailChamps+'</span>';
     }
 
     for(let i=0; i*CHUNK < arbres.length; i++){
@@ -9148,12 +9150,12 @@ async function syncEnvoyer(){
     const _now = new Date();
     localStorage.setItem('sync_saved_at', _now.toLocaleString('fr-CH'));
     localStorage.setItem('sync_saved_at_iso', _now.toISOString());
-    if(status) status.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong><br><span style="font-size:11px;color:var(--stone)">yugen_meta.json : '+metaTailleKo+' Ko — '+detailChamps+'</span>';
+    if(status) status.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong><br><span style="font-size:11px;color:var(--stone)">0_yugen_meta.json : '+metaTailleKo+' Ko — '+detailChamps+'</span>';
     ouvrirSyncModal();
     // ouvrirSyncModal() régénère #sync-status (vide) — on réinjecte le diagnostic après coup
     setTimeout(()=>{
       const s2 = document.getElementById('sync-status');
-      if(s2) s2.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong><br><span style="font-size:11px;color:var(--stone)">yugen_meta.json : '+metaTailleKo+' Ko — '+detailChamps+'</span>';
+      if(s2) s2.innerHTML = '✅ Envoyé — <strong>'+arbres.length+' arbres</strong><br><span style="font-size:11px;color:var(--stone)">0_yugen_meta.json : '+metaTailleKo+' Ko — '+detailChamps+'</span>';
     }, 30);
   } catch(e){
     if(status) status.textContent = '❌ Erreur : '+e.message;
@@ -9186,9 +9188,9 @@ async function syncRecevoir(){
     console.log('Gist reçu — fichiers :', diagFichiers);
     // Diagnostic : GitHub tronque le champ "content" des fichiers de Gist trop volumineux
     // (au-delà d'environ 1 Mo) et signale ça via data.files[x].truncated === true.
-    const metaFileInfo = data.files?.['yugen_meta.json'];
+    const metaFileInfo = data.files?.['0_yugen_meta.json'];
     if(metaFileInfo?.truncated){
-      throw new Error('yugen_meta.json tronqué par GitHub (taille rapportée : '+(metaFileInfo.size||'?')+' octets, content reçu : '+((metaFileInfo.content||'').length)+' caractères) — Tous les fichiers : '+diagFichiers);
+      throw new Error('0_yugen_meta.json tronqué par GitHub (taille rapportée : '+(metaFileInfo.size||'?')+' octets, content reçu : '+((metaFileInfo.content||'').length)+' caractères) — Tous les fichiers : '+diagFichiers);
     }
     // Lire l'index
     const idxContent = data.files?.['yugen_index.json']?.content;
@@ -9196,13 +9198,17 @@ async function syncRecevoir(){
     const idx = JSON.parse(idxContent);
     const chunks = idx.chunks || 1;
     // Lire les métadonnées
-    const metaContent = data.files?.['yugen_meta.json']?.content;
+    const metaContent = data.files?.['0_yugen_meta.json']?.content;
     if(!metaContent) throw new Error('Fichier meta introuvable');
     const collection = JSON.parse(metaContent);
     // Lire les chunks d'arbres
     collection.arbres = [];
     for(let i=0; i<chunks; i++){
-      const chunkContent = data.files?.['yugen_arbres_'+i+'.json']?.content;
+      const chunkInfo = data.files?.['yugen_arbres_'+i+'.json'];
+      if(chunkInfo?.truncated){
+        throw new Error('yugen_arbres_'+i+'.json tronqué par GitHub — la collection totale (tous fichiers confondus) dépasse la limite ~1 Mo par Gist. Réduisez le nombre de photos/travaux ou contactez le support.');
+      }
+      const chunkContent = chunkInfo?.content;
       if(chunkContent){
         const chunk = JSON.parse(chunkContent);
         collection.arbres.push(...chunk);
