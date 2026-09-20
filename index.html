@@ -9226,7 +9226,7 @@ async function syncRecevoir(){
     }
     // Lire l'index
     const idxContent = data.files?.['yugen_index.json']?.content;
-    if(!idxContent) throw new Error('Fichier index introuvable — vérifiez le code');
+    if(!idxContent) throw new Error('Fichier index introuvable — Tous les fichiers reçus : '+(diagFichiers||'(aucun)'));
     const idx = JSON.parse(idxContent);
     const chunks = idx.chunks || 1;
     // Lire les métadonnées
