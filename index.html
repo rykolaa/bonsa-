@@ -7912,7 +7912,18 @@ async function syncAuDemarrage(){
     const resp = await fetch('https://api.github.com/gists/'+gistId, {headers});
     if(!resp.ok) return;
     const data = await resp.json();
-    const metaContent0 = data.files?.['0_yugen_meta.json']?.content;
+    // La réponse groupée de l'API tronque son contenu bien avant la limite annoncée
+    // dès que la somme des fichiers devient importante (voir syncRecevoir) — on va donc
+    // chercher chaque fichier individuellement via son raw_url, sans cette limite.
+    async function contenuComplet(nomFichier){
+      const info = data.files?.[nomFichier];
+      if(!info) return null;
+      try{
+        const r = await fetch(info.raw_url + '&t=' + Date.now(), {cache:'no-store'});
+        return r.ok ? await r.text() : (info.content || null);
+      } catch(e){ return info.content || null; }
+    }
+    const metaContent0 = await contenuComplet('0_yugen_meta.json');
     if(!metaContent0) return;
     const idx = JSON.parse(metaContent0);
     const gistDate = new Date(idx.savedAt);
@@ -7920,15 +7931,13 @@ async function syncAuDemarrage(){
     if(gistDate - localDate > 30000){
       if(ind){ ind.style.display='block'; ind.textContent='🔄 Mise à jour…'; }
       const chunks = idx._chunks || 1;
-      const metaContent = data.files?.['0_yugen_meta.json']?.content;
-      if(!metaContent) return;
-      const collection = JSON.parse(metaContent);
+      const collection = JSON.parse(metaContent0);
       collection.arbres = [];
       for(let i=0; i<chunks; i++){
-        const chunkInfo = data.files?.['yugen_arbres_'+i+'.json'];
-        if(chunkInfo?.truncated){ console.warn('yugen_arbres_'+i+'.json tronqué par GitHub — sync auto abandonnée'); return; }
-        const c = chunkInfo?.content;
-        if(c) collection.arbres.push(...JSON.parse(c));
+        const c = await contenuComplet('yugen_arbres_'+i+'.json');
+        if(c){
+          try{ collection.arbres.push(...JSON.parse(c)); } catch(e){ console.warn('yugen_arbres_'+i+'.json illisible — sync auto ignore ce lot'); }
+        }
       }
       if(!collection.arbres?.length) return;
 
@@ -9211,40 +9220,48 @@ async function syncRecevoir(){
     if(!resp.ok) throw new Error(resp.status===404?'Code introuvable — vérifiez le code':'HTTP '+resp.status);
     const data = await resp.json();
     // Diagnostic : liste tous les fichiers du Gist tels que GitHub les rapporte (nom,
-    // taille annoncée, drapeau truncated, longueur réelle du contenu reçu) — utile pour
-    // voir exactement ce que l'API renvoie plutôt que de deviner.
+    // taille annoncée, drapeau truncated) — utile pour voir ce que l'API renvoie.
     const diagFichiers = Object.entries(data.files||{})
       .map(([nom,info])=>nom+'('+(info.size||0)+'o'+(info.truncated?',TRONQUÉ':'')+')')
       .join(' · ');
     console.log('Gist reçu — fichiers :', diagFichiers);
-    // Diagnostic : GitHub tronque le champ "content" des fichiers de Gist trop volumineux
-    // (au-delà d'environ 1 Mo) et signale ça via data.files[x].truncated === true.
-    const metaFileInfo = data.files?.['0_yugen_meta.json'];
-    if(metaFileInfo?.truncated){
-      throw new Error('0_yugen_meta.json tronqué par GitHub (taille rapportée : '+(metaFileInfo.size||'?')+' octets, content reçu : '+((metaFileInfo.content||'').length)+' caractères) — Tous les fichiers : '+diagFichiers);
+
+    // La réponse groupée de l'API (ci-dessus) tronque son contenu bien avant la limite
+    // annoncée de 1 Mo par fichier dès que la somme de TOUS les fichiers d'un coup
+    // devient importante — constaté avec seulement 50 arbres sur 212 reçus alors que
+    // rien n'était individuellement marqué "truncated". La solution fiable : aller
+    // chercher chaque fichier séparément à son adresse propre (raw_url), qui n'a pas
+    // cette limite groupée.
+    if(status) status.textContent='⏳ Récupération des fichiers (2/2)…';
+    async function contenuComplet(nomFichier){
+      const info = data.files?.[nomFichier];
+      if(!info) return null;
+      try{
+        const r = await fetch(info.raw_url + '&t=' + Date.now(), {cache:'no-store'});
+        if(!r.ok) return info.content || null;
+        return await r.text();
+      } catch(e){
+        return info.content || null; // repli sur le contenu (potentiellement tronqué) si le fetch direct échoue
+      }
     }
-    // Lire les métadonnées (contient aussi désormais _chunks, l'ancien index séparé)
-    const metaContent = data.files?.['0_yugen_meta.json']?.content;
+
+    const metaContent = await contenuComplet('0_yugen_meta.json');
     if(!metaContent) throw new Error('Fichier meta introuvable — Tous les fichiers reçus : '+(diagFichiers||'(aucun)'));
     const collection = JSON.parse(metaContent);
     const chunks = collection._chunks || 1;
-    // Lire les chunks d'arbres — si l'un d'eux est tronqué (Gist trop volumineux au
-    // total), on continue quand même avec les autres plutôt que de tout bloquer :
-    // mieux vaut recevoir 200 arbres sur 212 que zéro. L'utilisateur est prévenu.
+    // Lire les chunks d'arbres — un par un, chacun via son adresse propre.
     collection.arbres = [];
-    let chunkTronqueNb = 0;
+    let chunkEchecNb = 0;
     for(let i=0; i<chunks; i++){
-      const chunkInfo = data.files?.['yugen_arbres_'+i+'.json'];
-      if(chunkInfo?.truncated){ chunkTronqueNb++; continue; }
-      const chunkContent = chunkInfo?.content;
-      if(chunkContent){
-        const chunk = JSON.parse(chunkContent);
-        collection.arbres.push(...chunk);
-      }
+      const chunkContent = await contenuComplet('yugen_arbres_'+i+'.json');
+      if(!chunkContent){ chunkEchecNb++; continue; }
+      try{
+        collection.arbres.push(...JSON.parse(chunkContent));
+      } catch(e){ chunkEchecNb++; }
     }
-    if(!collection.arbres||collection.arbres.length===0) throw new Error('Format non reconnu — arbres manquants');
-    if(chunkTronqueNb>0 && status){
-      status.innerHTML = '⚠️ '+chunkTronqueNb+' lot(s) d\'arbres tronqué(s) par GitHub (Gist trop volumineux au total) — '+collection.arbres.length+' arbre(s) reçu(s) quand même. Réduisez photos/travaux si possible.';
+    if(!collection.arbres||collection.arbres.length===0) throw new Error('Format non reconnu — arbres manquants ('+diagFichiers+')');
+    if(chunkEchecNb>0 && status){
+      status.innerHTML = '⚠️ '+chunkEchecNb+' lot(s) d\'arbres non récupéré(s) — '+collection.arbres.length+' arbre(s) reçu(s) quand même.';
     }
     const nbActuel = db.arbres.length;
     if(nbActuel>0){
@@ -9256,7 +9273,7 @@ async function syncRecevoir(){
     localStorage.setItem('sync_saved_at', new Date().toLocaleString('fr-CH'));
     render(); _hideLoading(); closeModal();
     afficherIndicateur(
-      (chunkTronqueNb>0 ? '⚠️ '+chunkTronqueNb+' lot(s) d\'arbres tronqué(s) — ' : '✅ Sync reçue — ')
+      (chunkEchecNb>0 ? '⚠️ '+chunkEchecNb+' lot(s) d\'arbres non récupéré(s) — ' : '✅ Sync reçue — ')
       + collection.arbres.length+' arbres · '+db.pots.length+' pots · photos préservées'
     );
   } catch(e){
