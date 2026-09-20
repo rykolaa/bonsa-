@@ -5980,6 +5980,32 @@ function openPotModal(id, fromRemp=false){
       <div class="fg"><label>Matière</label><select id="p-mat"><option value="">— Choisir —</option>${MATIERES_POT.map(f=>`<option value="${f}" ${isEdit&&(p.matiere||'').trim()===f?'selected':''}>${f}</option>`).join('')}</select></div>
       <div class="fg"><label>Statut</label><select id="p-statut"><option value="libre" ${!isEdit||p.statut==='libre'?'selected':''}>Disponible</option><option value="utilisé" ${isEdit&&p.statut==='utilisé'?'selected':''}>En service</option><option value="cassé" ${isEdit&&p.statut==='cassé'?'selected':''}>Cassé</option><option value="vendu" ${isEdit&&p.statut==='vendu'?'selected':''}>Vendu</option></select></div>
     </div>
+    ${(()=>{
+      if(!isEdit) return '';
+      // Historique : tous les rempotages (tous arbres) qui ont utilisé ce pot, du plus récent au plus ancien.
+      const historique = (db.rempotages||[])
+        .filter(r=>r.pot_id===p.id)
+        .map(r=>({r, a:db.arbres.find(a=>a.id===r.arbre_id)}))
+        .filter(x=>x.a)
+        .sort((x,y)=>(y.r.date||'').localeCompare(x.r.date||''));
+      if(!historique.length) return '';
+      // Le plus récent, s'il correspond bien au dernier rempotage de son arbre, est l'usage actuel.
+      const actuel = historique.find(x=>{
+        const dernierDeCetArbre = (db.rempotages||[]).filter(r=>r.arbre_id===x.a.id).sort((a2,b2)=>(b2.date||'').localeCompare(a2.date||''))[0];
+        return dernierDeCetArbre && dernierDeCetArbre.pot_id===p.id && dernierDeCetArbre.date===x.r.date;
+      });
+      return `<div class="form-row"><div class="fg" style="grid-column:1/-1">
+        ${actuel?`<div style="background:var(--moss-light);border-radius:6px;padding:8px 12px;font-size:13px;color:var(--moss);margin-bottom:8px">
+          🌳 En service sur : <strong>${actuel.a.nom}</strong>
+        </div>`:''}
+        <label>Historique d'utilisation (${historique.length})</label>
+        <div style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+          ${historique.map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--border)${x===actuel?';background:var(--moss-light)':''}">
+            <span>🌳 ${x.a.nom}${x===actuel?' <span style="color:var(--moss);font-weight:600">· actuel</span>':''}</span><span style="color:var(--stone)">${fmtDate(x.r.date)}</span>
+          </div>`).join('')}
+        </div>
+      </div></div>`;
+    })()}
     <div class="form-section">Dimensions & Poids</div>
     <div class="form-row three">
       <div class="fg"><label>Longueur (cm)</label><input id="p-l" type="number" step="0.5" value="${isEdit?p.long:''}"></div>
