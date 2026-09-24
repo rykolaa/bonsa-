@@ -4920,8 +4920,14 @@ function _reparerIdsSubstrats(){
     if(vus.has(s.id)){ s.id = _prochainId(db.substrats,'nextSubId'); repare = true; }
     vus.add(s.id);
   });
-  (db.melanges||[]).forEach(m=>(m.composants||[]).forEach(c=>{ c.sub_id = Number(c.sub_id); }));
-  if(repare){ console.warn('[Atelier] IDs de substrats en double réparés'); try{autoSave();}catch(e){} }
+  const vusMel = new Set();
+  (db.melanges||[]).forEach(m=>{
+    m.id = Number(m.id);
+    if(vusMel.has(m.id)){ m.id = _prochainId(db.melanges,'nextMelId'); repare = true; }
+    vusMel.add(m.id);
+    (m.composants||[]).forEach(c=>{ c.sub_id = Number(c.sub_id); });
+  });
+  if(repare){ console.warn('[Atelier] IDs de substrats/mélanges en double réparés'); try{autoSave();}catch(e){} }
 }
 
 function renderSubstrats(c){
