@@ -4906,7 +4906,26 @@ function renderPots(c){
 }
 
 // ── SUBSTRATS & MÉLANGES ───────────────────────────────────────────────────────
+// ── IDs uniques : le compteur nextXxxId peut être périmé après une synchro/import ──
+function _prochainId(arr, cle){
+  const maxId = (arr||[]).reduce((m,x)=>Math.max(m, Number(x&&x.id)||0), 0);
+  const id = Math.max(Number(db[cle])||1, maxId+1);
+  db[cle] = id+1;
+  return id;
+}
+function _reparerIdsSubstrats(){
+  const vus = new Set(); let repare = false;
+  (db.substrats||[]).forEach(s=>{
+    s.id = Number(s.id);
+    if(vus.has(s.id)){ s.id = _prochainId(db.substrats,'nextSubId'); repare = true; }
+    vus.add(s.id);
+  });
+  (db.melanges||[]).forEach(m=>(m.composants||[]).forEach(c=>{ c.sub_id = Number(c.sub_id); }));
+  if(repare){ console.warn('[Atelier] IDs de substrats en double réparés'); try{autoSave();}catch(e){} }
+}
+
 function renderSubstrats(c){
+  _reparerIdsSubstrats();
   const existing = c.innerHTML;
   let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
   <div>
@@ -5153,7 +5172,7 @@ function sauvegarderEngrais(id){
     notes:document.getElementById('eng-notes').value,
     date_achat:document.getElementById('eng-date-achat').value||''};
   if(id){Object.assign(db.engrais.find(x=>x.id===id),data);}
-  else{data.id=db.nextEngId++;db.engrais.push(data);}
+  else{data.id=_prochainId(db.engrais,'nextEngId');db.engrais.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
 }
 
@@ -5240,7 +5259,7 @@ function sauvegarderProduit(id){
     notes:document.getElementById('prod-notes').value,
     date_achat:document.getElementById('prod-date-achat').value||''};
   if(id){Object.assign(db.produits.find(x=>x.id===id),data);}
-  else{data.id=db.nextProdId++;db.produits.push(data);}
+  else{data.id=_prochainId(db.produits,'nextProdId');db.produits.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
 }
 
@@ -6204,7 +6223,7 @@ async function sauvegarderPot(id, fromRemp=false){
     collection:document.getElementById('p-collection').value,
     notes:document.getElementById('p-notes').value,photos:photosAllege,arbre_id:null};
   if(id){Object.assign(db.pots.find(x=>x.id===id),data);}
-  else{data.id=db.nextPotId++;db.pots.push(data);}
+  else{data.id=_prochainId(db.pots,'nextPotId');db.pots.push(data);}
   closeModal();
   if(fromRemp) openRempotageModal(0);
   else renderAtelier(document.getElementById('content'));
@@ -6274,7 +6293,7 @@ function sauvegarderSubstrat(id){
     notes:document.getElementById('s-notes').value,
     date_achat:document.getElementById('s-date-achat').value||''};
   if(id){Object.assign(db.substrats.find(x=>x.id===id),data);}
-  else{data.id=db.nextSubId++;db.substrats.push(data);}
+  else{data.id=_prochainId(db.substrats,'nextSubId');db.substrats.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
 }
 
@@ -6373,7 +6392,7 @@ function sauvegarderMelange(id){
   const data={nom,composants,litres_total:parseFloat(document.getElementById('m-litres').value)||0,
     notes:document.getElementById('m-notes').value,date_creation:document.getElementById('m-date').value};
   if(id){Object.assign(db.melanges.find(x=>x.id===id),data);}
-  else{data.id=db.nextMelId++;db.melanges.push(data);}
+  else{data.id=_prochainId(db.melanges,'nextMelId');db.melanges.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
 }
 
