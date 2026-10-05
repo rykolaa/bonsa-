@@ -75,6 +75,8 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
   .sidebar.mobile-open{transform:translateX(0)}
   .sidebar-toggle-fab.show{display:flex}
 }
+.flt-voir{display:none}
+@media(max-width:700px){ .flt-voir{display:block} }
 .sidebar-toggle-fab{display:none;position:fixed;bottom:24px;left:24px;z-index:150;background:var(--moss);color:#fff;border:none;border-radius:50%;width:52px;height:52px;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.25);cursor:pointer;align-items:center;justify-content:center}
 .sidebar-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:140}
 .sidebar-backdrop.show{display:block}
@@ -447,6 +449,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
   </div>
   <div class="body">
     <div class="sidebar" id="sidebar">
+      <div id="flt-resume"></div>
       <!-- Affichage -->
       <div class="sidebar-section">
         <div class="sidebar-sec-title" onclick="toggleAcc('affichage')">Affichage <span class="acc-arrow" id="acc-arrow-affichage">▶</span></div>
@@ -1050,51 +1053,129 @@ function seedData(){
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
+// ── FILTRES COMBINABLES ───────────────────────────────────────────────────────
+// Une valeur au plus par rubrique (Style, Origine, Espèce, Taille, Complétude,
+// Alertes) ; les rubriques se combinent (ex. Érable Burger + Achat).
+// Re-cliquer un filtre actif le retire.
+const FLT_LIBS = {comp:'Complétude', style:'Style', origine:'Origine', espece:'Espèce', taille:'Taille', alerte:'Alerte'};
+function _filtres(){ if(!state.filtres) state.filtres = {}; return state.filtres; }
+function _fltCat(f){
+  if(f==='urgent' || f==='sante-low') return 'alerte';
+  if(f.startsWith('comp:')) return 'comp';
+  if(f.startsWith('taille:')) return 'taille';
+  if(db.arbres.some(a=>a.espece===f)) return 'espece';
+  if(db.arbres.some(a=>a.origine===f)) return 'origine';
+  return 'style';
+}
+function _fltTest(a, cat, v){
+  switch(cat){
+    case 'alerte': return v==='urgent'
+      ? getSoinsPlanifies(a).some(s=>{const d=daysUntil(s.date);return d!==null&&d<=14&&d>=0;})
+      : a.sante<70;
+    case 'comp': { const [lo,hi] = v.slice(5).split('-').map(Number); const p = completudeArbre(a).pct; return p>=lo && p<=hi; }
+    case 'taille': { const h = HAUTEURS.find(x=>x.nom===v.slice(7)); return h ? a.hauteur>=h.min && a.hauteur<h.max : false; }
+    case 'style': return a.style===v;
+    case 'origine': return a.origine===v;
+    case 'espece': return a.espece===v;
+  }
+  return true;
+}
+// L'arbre passe-t-il tous les filtres actifs (sauf éventuellement une rubrique) ?
+function _fltPasse(a, sauf){
+  const F = _filtres();
+  for(const c in F){ if(c!==sauf && F[c] && !_fltTest(a, c, F[c])) return false; }
+  return true;
+}
+function fltActif(cat, v){ return _filtres()[cat]===v; }
+function _fltLibelle(cat, v){
+  if(cat==='alerte') return v==='urgent' ? '🔔 Soins urgents' : '⚠️ Santé < 70%';
+  if(cat==='comp'){ const t = COMPL_TRANCHES.find(x=>x.cle===v); return t ? t.lib : v; }
+  if(cat==='taille') return v.slice(7);
+  if(cat==='espece') return getEmoji(v)+' '+v;
+  return v;
+}
+function _fltBtn(cat, v, label, n){
+  const actif = fltActif(cat, v);
+  const js = v.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+  return `<button class="flt ${actif?'active':''}" onclick="setFlt('${js}','${cat}')">${label} <span class="cnt">${actif?'✓ ':''}${n}</span></button>`;
+}
+function retirerFiltre(cat){ _filtres()[cat] = null; _majStateFilter(); window._garderFiltres = true; render(); }
+
 function updateSidebar(){
   const all = db.arbres;
+  // Base de comptage d'une rubrique = arbres qui passent les AUTRES filtres actifs
+  const base = cat => all.filter(a=>_fltPasse(a, cat));
+  const F = _filtres();
+  const nbActifs = Object.values(F).filter(Boolean).length;
   document.getElementById('cnt-all').textContent = all.length;
-  document.getElementById('cnt-urgent').textContent = all.reduce((s,a)=>s+getSoinsPlanifies(a).filter(soin=>{const d=daysUntil(soin.date);return d!==null&&d<=14&&d>=0}).length,0);
-  document.getElementById('cnt-sante-low').textContent = all.filter(a=>a.sante<70).length;
+  document.getElementById('flt-all')?.classList.toggle('active', nbActifs===0);
+  const bAl = base('alerte');
+  document.getElementById('cnt-urgent').textContent = (fltActif('alerte','urgent')?'✓ ':'') + bAl.filter(a=>_fltTest(a,'alerte','urgent')).length;
+  document.getElementById('cnt-sante-low').textContent = (fltActif('alerte','sante-low')?'✓ ':'') + bAl.filter(a=>a.sante<70).length;
+  document.getElementById('flt-urgent')?.classList.toggle('active', fltActif('alerte','urgent'));
+  document.getElementById('flt-sante-low')?.classList.toggle('active', fltActif('alerte','sante-low'));
 
+  const bSt = base('style');
   const styles = [...new Set(all.map(a=>a.style))].filter(s=>s&&!/^Choisir/i.test(s)&&!/Diam[èe]tre/i.test(s)&&s.length<60).sort();
   document.getElementById('style-filters').innerHTML = styles.map(s=>{
+    const n = bSt.filter(a=>a.style===s).length;
+    if(!n && !fltActif('style',s)) return '';
     const info=STYLES.find(x=>x.fr===s||x.romaji===s||x.kanji===s);
-    const label=info?`${info.kanji} ${s}`:s;
-    return`<button class="flt ${state.filter===s?'active':''}" onclick="setFlt('${s.replace(/'/g,"\\'")}')">${label} <span class="cnt">${all.filter(a=>a.style===s).length}</span></button>`;
+    return _fltBtn('style', s, info?`${info.kanji} ${s}`:s, n);
   }).join('');
 
-  const origines = [...new Set(all.map(a=>a.origine))].sort();
-  document.getElementById('origine-filters').innerHTML = origines.map(o=>`<button class="flt ${state.filter===o?'active':''}" onclick="setFlt('${o.replace(/'/g,'\\\'')}')">${o} <span class="cnt">${all.filter(a=>a.origine===o).length}</span></button>`).join('');
+  const bOr = base('origine');
+  const origines = [...new Set(all.map(a=>a.origine))].filter(Boolean).sort();
+  document.getElementById('origine-filters').innerHTML = origines.map(o=>{
+    const n = bOr.filter(a=>a.origine===o).length;
+    return (n || fltActif('origine',o)) ? _fltBtn('origine', o, o, n) : '';
+  }).join('');
 
-  const especes = [...new Set(all.map(a=>a.espece))].sort();
-  document.getElementById('espece-filters').innerHTML = especes.map(e=>`<button class="flt ${state.filter===e?'active':''}" onclick="setFlt('${e.replace(/'/g,'\\\'')}')">${getEmoji(e)} ${e.length>18?e.substring(0,18)+'…':e} <span class="cnt">${all.filter(a=>a.espece===e).length}</span></button>`).join('');
+  const bEs = base('espece');
+  const especes = [...new Set(all.map(a=>a.espece))].filter(Boolean).sort();
+  document.getElementById('espece-filters').innerHTML = especes.map(e=>{
+    const n = bEs.filter(a=>a.espece===e).length;
+    return (n || fltActif('espece',e)) ? _fltBtn('espece', e, `${getEmoji(e)} ${e.length>18?e.substring(0,18)+'…':e}`, n) : '';
+  }).join('');
 
-  // Complétude des fiches : moyenne + tranches
+  // Complétude des fiches : moyenne (de toute la collection) + tranches
   const compEl = document.getElementById('completude-filters');
   if(compEl){
     const pcts = all.map(a=>completudeArbre(a).pct);
     const moy = pcts.length ? Math.round(pcts.reduce((s,p)=>s+p,0)/pcts.length) : 0;
     const moyEl = document.getElementById('completude-moyenne');
     if(moyEl) moyEl.innerHTML = `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="color:var(--stone)">Moyenne</span><b style="color:${couleurCompletude(moy)}">${moy} %</b></div>${barreCompletude(moy,6)}`;
-    compEl.innerHTML = COMPL_TRANCHES.map(t=>{
-      const n = pcts.filter(p=>p>=t.min && p<=t.max).length;
-      return `<button class="flt ${state.filter===t.cle?'active':''}" id="flt-${t.cle}" onclick="filtrerCompletude('${t.cle}')">${t.lib} <span class="cnt">${n}</span></button>`;
-    }).join('');
-    document.getElementById('flt-comp-tri')?.classList.toggle('active', state.sort==='completude' && state.filter==='all');
+    const pB = base('comp').map(a=>completudeArbre(a).pct);
+    compEl.innerHTML = COMPL_TRANCHES.map(t=>_fltBtn('comp', t.cle, t.lib, pB.filter(p=>p>=t.min && p<=t.max).length)).join('');
+    document.getElementById('flt-comp-tri')?.classList.toggle('active', state.sort==='completude' && nbActifs===0);
   }
 
-  // Filtres par taille — uniquement les catégories présentes dans la collection
+  // Filtres par taille — uniquement les catégories présentes
   const tailleEl = document.getElementById('taille-filters');
   if(tailleEl){
-    const taillesPresentes = HAUTEURS.filter(h=>all.some(a=>a.hauteur>=h.min&&a.hauteur<h.max));
-    tailleEl.innerHTML = taillesPresentes.map(h=>{
-      const cnt = all.filter(a=>a.hauteur>=h.min&&a.hauteur<h.max).length;
+    const bTa = base('taille');
+    tailleEl.innerHTML = HAUTEURS.map(h=>{
       const key = 'taille:'+h.nom;
-      return`<button class="flt ${state.filter===key?'active':''}" onclick="setFlt('${key}')">
-        <span style="font-weight:500">${h.nom}</span> <span style="color:var(--stone);font-weight:400">${h.min}–${h.max}cm</span>
-        <span class="cnt">${cnt}</span>
-      </button>`;
+      const n = bTa.filter(a=>a.hauteur>=h.min&&a.hauteur<h.max).length;
+      if(!n && !fltActif('taille',key)) return '';
+      return _fltBtn('taille', key, `<span style="font-weight:500">${h.nom}</span> <span style="color:var(--stone);font-weight:400">${h.min}–${h.max}cm</span>`, n);
     }).join('');
+  }
+
+  // Résumé des filtres actifs (haut de la barre)
+  const res = document.getElementById('flt-resume');
+  if(res){
+    if(!nbActifs){ res.innerHTML = ''; }
+    else {
+      const n = all.filter(a=>_fltPasse(a)).length;
+      res.innerHTML = `<div style="background:var(--moss-light);border:1px solid var(--moss-mid,#4a8a42);border-radius:8px;padding:8px 10px;margin:0 0 10px">
+        <div style="font-size:11px;font-weight:600;color:var(--moss);margin-bottom:5px">Filtres actifs · ${n} arbre${n>1?'s':''}</div>
+        ${Object.entries(F).filter(([c,v])=>v).map(([c,v])=>`<button onclick="retirerFiltre('${c}')" title="Retirer ce filtre" style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:2px 8px;margin:2px 3px 2px 0;font-size:11.5px;cursor:pointer">${_fltLibelle(c,v)} <b style="color:var(--rust)">✕</b></button>`).join('')}
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button onclick="setFlt('all')" style="flex:1;font-size:11.5px;padding:4px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer">✕ Tout effacer</button>
+          <button class="flt-voir" onclick="closeSidebarMobile()" style="flex:1;font-size:11.5px;padding:4px;border:none;border-radius:6px;background:var(--moss);color:#fff;cursor:pointer">Voir les ${n} arbre${n>1?'s':''}</button>
+        </div></div>`;
+    }
   }
 }
 
@@ -1112,21 +1193,7 @@ function getFiltered(){
         && !styleRomaji.includes(q) && !styleKanji.includes(q)
         && !nomTaille.includes(q)) return false;
     }
-    if(state.filter==='all') return true;
-    if(state.filter==='urgent'){return getSoinsPlanifies(a).some(s=>{const d=daysUntil(s.date);return d!==null&&d<=14&&d>=0;});}
-    if(state.filter==='sante-low') return a.sante<70;
-    if(state.filter.startsWith('comp:')){
-      const [lo,hi] = state.filter.slice(5).split('-').map(Number);
-      const p = completudeArbre(a).pct; return p>=lo && p<=hi;
-    }
-    // Filtre taille
-    if(state.filter.startsWith('taille:')){
-      const nomH = state.filter.slice(7);
-      const h = HAUTEURS.find(x=>x.nom===nomH);
-      return h ? a.hauteur>=h.min && a.hauteur<h.max : false;
-    }
-    if(a.style===state.filter||a.origine===state.filter||a.espece===state.filter) return true;
-    return false;
+    return _fltPasse(a);
   });
   // Tri
   const _comp = (state.sort==='completude'||state.sort==='completude-') ? new Map(arr.map(a=>[a.id, completudeArbre(a).pct])) : null;
@@ -1254,7 +1321,8 @@ function closeSidebarMobile(){
 }
 
 function render(){
-  closeSidebarMobile();
+  if(!window._garderFiltres) closeSidebarMobile();
+  window._garderFiltres = false;
   updateSidebar();
   const sid = document.getElementById('sidebar');
   sid.style.display = state.page==='collection'?'':'none';
@@ -1829,7 +1897,7 @@ function renderCollection(c){
 
   const _allIds = filtered.map(a=>a.id);
   const _allSel = _allIds.length>0 && _allIds.every(id=>etiqSel.has(id));
-  html+=`<div class="view-toolbar"><div style="font-size:13px;color:var(--stone)">${filtered.length} arbre${filtered.length>1?'s':''} affiché${filtered.length>1?'s':''}</div>
+  html+=`<div class="view-toolbar"><div style="font-size:13px;color:var(--stone)">${filtered.length} arbre${filtered.length>1?'s':''} affiché${filtered.length>1?'s':''}${Object.values(_filtres()).some(Boolean)?` · <span style="color:var(--moss)">${Object.entries(_filtres()).filter(([c,v])=>v).map(([c,v])=>`<button onclick="retirerFiltre('${c}')" title="Retirer ce filtre" style="background:var(--moss-light);border:none;border-radius:10px;padding:1px 7px;margin:0 2px;font-size:11.5px;cursor:pointer;color:var(--moss)">${_fltLibelle(c,v)} ✕</button>`).join('')}</span>`:''}</div>
     <div style="display:flex;align-items:center;gap:8px">
       <button onclick="selectionnerTous()" title="${_allSel?'Tout désélectionner':'Tout sélectionner'}"
         style="font-size:12px;padding:4px 10px;background:${_allSel?'var(--moss)':'#fff'};color:${_allSel?'#fff':'var(--stone)'};border:1px solid ${_allSel?'var(--moss)':'var(--border)'};border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">
@@ -4661,13 +4729,19 @@ function syncMobileTabs(){
     if(el) el.classList.toggle('active', state.page===p);
   });
 }
-function setFlt(f){
-  state.filter=f;
-  document.querySelectorAll('.flt').forEach(b=>b.classList.remove('active'));
-  const el=document.getElementById('flt-'+f.replace(/\s/g,'_'));
-  if(el)el.classList.add('active');
-  else{const btn=Array.from(document.querySelectorAll('.flt')).find(b=>b.textContent.trim().startsWith(f));if(btn)btn.classList.add('active');}
-  document.getElementById('flt-all')?.classList.toggle('active',f==='all');
+function _majStateFilter(){
+  const actifs = Object.values(_filtres()).filter(Boolean);
+  state.filter = actifs.length ? (actifs.length===1 ? actifs[0] : 'multi') : 'all';
+}
+function setFlt(f, cat){
+  const F = _filtres();
+  if(f==='all'){ state.filtres = {}; }
+  else {
+    cat = cat || _fltCat(f);
+    F[cat] = F[cat]===f ? null : f;   // re-cliquer = retirer
+  }
+  _majStateFilter();
+  window._garderFiltres = f!=='all';  // sur téléphone, le tiroir reste ouvert pour combiner
   render();
 }
 function setDisp(d){
@@ -9865,7 +9939,7 @@ const GH_LS = {token:'gh_sync_token', owner:'gh_sync_owner', repo:'gh_sync_repo'
                auto:'gh_sync_auto', last:'gh_sync_last', stats:'gh_sync_stats', prive:'gh_sync_prive'};
 const GH_PACK_MAX = 8*1024*1024;      // taille cible d'un paquet
 const GH_PACKS_PAR_COMMIT = 3;        // on enregistre la progression tous les 3 paquets
-let _sync = {enCours:false, relancer:false, timer:null, dernierEchec:''};
+let _sync = {enCours:false, relancer:false, timer:null, dernierEchec:'', gen:0, tActivite:0, ctrls:new Set()};
 
 function ghCfg(){
   const token = localStorage.getItem(GH_LS.token), owner = localStorage.getItem(GH_LS.owner), repo = localStorage.getItem(GH_LS.repo);
@@ -9888,11 +9962,26 @@ async function ghFetch(cfg, path, opts={}, essai=0){
   const headers = {'Accept':'application/vnd.github+json', 'Authorization':'Bearer '+cfg.token, ...(opts.headers||{})};
   if(opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   let r;
-  try{ r = await fetch(GH_API+path, {...opts, headers, cache:'no-store'}); }
+  // Délai maximum : une requête qui ne répond plus (iPhone passé en arrière-plan,
+  // réseau coupé en plein envoi…) est abandonnée puis réessayée, au lieu de bloquer
+  // la synchronisation (sablier ⏳ permanent).
+  const lourd = (typeof opts.body==='string' && opts.body.length > 500000) || /\/git\/blobs\//.test(path);
+  const delai = lourd ? 240000 : 60000;
+  const ctrl = new AbortController();
+  _sync.ctrls.add(ctrl);
+  let minuterie = setTimeout(()=>{ ctrl._delai = true; ctrl.abort(); }, delai);
+  _sync.tActivite = Date.now();
+  try{ r = await fetch(GH_API+path, {...opts, headers, cache:'no-store', signal:ctrl.signal}); }
   catch(e){
+    clearTimeout(minuterie); _sync.ctrls.delete(ctrl);
+    if(ctrl._surveillance) throw new Error('Synchronisation interrompue (GitHub ne répondait plus) — nouvel essai automatique.');
     if(essai < 3){ await _attendre(2000*(essai+1)); return ghFetch(cfg, path, opts, essai+1); }
-    throw new Error('Pas de connexion à GitHub — vérifiez Internet.');
+    throw new Error(ctrl._delai ? 'GitHub ne répond pas (délai dépassé) — nouvel essai plus tard.' : 'Pas de connexion à GitHub — vérifiez Internet.');
   }
+  _sync.tActivite = Date.now();
+  // Le délai couvre aussi la lecture de la réponse (sans effet une fois celle-ci lue)
+  clearTimeout(minuterie);
+  minuterie = setTimeout(()=>{ ctrl._delai = true; ctrl.abort(); _sync.ctrls.delete(ctrl); }, delai);
   // Limites de débit de GitHub : on patiente puis on réessaie
   if((r.status===403 || r.status===429) && essai < 4){
     const ra = Number(r.headers.get('retry-after'))||0;
@@ -10229,6 +10318,8 @@ async function syncGitHub(opts={}){
     if(mo && mo.style.display==='flex' && !document.getElementById('gh-sync-modal')){ programmerSync(15000); return; }
   }
   _sync.enCours = true;
+  const gen = ++_sync.gen;
+  _sync.tActivite = Date.now();
   _syncEtatVisuel('encours');
   let stats = null;
   try{
@@ -10291,6 +10382,7 @@ async function syncGitHub(opts={}){
     _syncEtatVisuel('erreur');
     if(manuel && !document.getElementById('gh-sync-modal')) alert('❌ Synchronisation impossible :\n\n'+_sync.dernierEchec);
   } finally {
+    if(gen !== _sync.gen) return;   // synchronisation abandonnée par la surveillance : une autre a pris le relais
     _sync.enCours = false;
     if(document.getElementById('gh-sync-modal')) ouvrirSyncModal();
     if(_sync.relancer){ _sync.relancer = false; programmerSync(3000); }
@@ -10304,6 +10396,7 @@ function programmerSync(ms=8000){
 }
 
 function _syncProgres(msg){
+  _sync.tActivite = Date.now();
   const el = document.getElementById('gh-progress');
   if(el) el.textContent = msg;
   afficherIndicateur('⏳ '+msg);
@@ -10434,9 +10527,35 @@ function ouvrirSyncModal(){
   document.getElementById('modal-overlay').style.display = 'flex';
 }
 
+// Surveillance : une synchronisation sans aucune activité depuis 5 min est débloquée
+function _syncSurveiller(){
+  if(!_sync.enCours) return;
+  const inactif = Date.now() - (_sync.tActivite||0);
+  if(inactif < 300000) return;
+  if(!_sync.tAbandon){
+    // 1) couper les requêtes en attente : la synchro en cours s'arrête proprement
+    _sync.tAbandon = Date.now();
+    _sync.relancer = true;
+    _sync.ctrls.forEach(c=>{ c._surveillance = true; try{ c.abort(); }catch(_){} });
+    _sync.ctrls.clear();
+    setTimeout(_syncSurveiller, 30000);
+    return;
+  }
+  if(Date.now() - _sync.tAbandon < 30000) return;
+  // 2) toujours bloquée (hors réseau) : on libère et on relance
+  _sync.tAbandon = 0;
+  _sync.gen++;
+  _sync.enCours = false;
+  _sync.dernierEchec = 'Synchronisation bloquée — relancée automatiquement.';
+  _syncEtatVisuel('erreur');
+  programmerSync(2000);
+}
+setInterval(()=>{ _syncSurveiller(); if(!_sync.enCours) _sync.tAbandon = 0; }, 20000);
+
 // Déclencheurs automatiques
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState!=='visible' || !ghCfg()) return;
+  _syncSurveiller();
   const last = Date.parse(localStorage.getItem(GH_LS.last)||0)||0;
   if(Date.now()-last > 60000) programmerSync(1500);
 });
