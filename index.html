@@ -3240,14 +3240,15 @@ function openDetail(id){
         const rows = mesures.map((m,i)=>{
           const prev = mesures[i+1];
           const diff = (val,key)=>{
-            if(!prev||prev[key]===undefined) return '';
+            if(!prev||prev[key]===undefined||!val||!prev[key]) return '';
             const d=Math.round((val-prev[key])*10)/10;
             if(!d) return '';
             return '<span style="color:'+(d>0?'#2d5a27':'#b42814')+';font-size:9px;margin-left:2px">'+(d>0?'+':'')+d+'</span>';
           };
-          return '<tr style="border-bottom:1px solid var(--border);'+(i===0?'background:rgba(45,90,39,.04)':'')+'"><td style="padding:4px 8px;color:var(--ink)">'+fmtDate(m.date)+'</td><td style="padding:4px 6px;text-align:right">'+(m.hauteur||'—')+'cm'+diff(m.hauteur,'hauteur')+'</td><td style="padding:4px 6px;text-align:right">'+(m.diam_tronc||'—')+'cm'+diff(m.diam_tronc,'diam_tronc')+'</td><td style="padding:4px 6px;text-align:right">'+(m.diam_houppier||'—')+'cm'+diff(m.diam_houppier,'diam_houppier')+'</td><td style="padding:4px 6px;text-align:right">'+(m.diam_nebari||'—')+'cm'+diff(m.diam_nebari,'diam_nebari')+'</td></tr>';
+          const v = x => x ? x+'cm' : '—';
+          return '<tr style="border-bottom:1px solid var(--border);'+(i===0?'background:rgba(45,90,39,.04)':'')+'"><td style="padding:4px 8px;color:var(--ink)">'+fmtDate(m.date)+'</td><td style="padding:4px 6px;text-align:right">'+v(m.hauteur)+diff(m.hauteur,'hauteur')+'</td><td style="padding:4px 6px;text-align:right">'+v(m.diam_tronc)+diff(m.diam_tronc,'diam_tronc')+'</td><td style="padding:4px 6px;text-align:right">'+v(m.diam_houppier)+diff(m.diam_houppier,'diam_houppier')+'</td><td style="padding:4px 6px;text-align:right">'+v(m.diam_nebari)+diff(m.diam_nebari,'diam_nebari')+'</td><td style="padding:2px 4px;text-align:center;width:24px"><button onclick="supprimerMesure('+a.id+',\''+m.date+'\')" title="Supprimer cette mesure" style="background:none;border:none;color:var(--rust);cursor:pointer;font-size:12px;padding:2px 4px">✕</button></td></tr>';
         }).join('');
-        return '<div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--sand-light)"><th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Date</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">H.</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Tronc</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Houppier</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Nébari</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        return '<div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--sand-light)"><th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Date</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">H.</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Tronc</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Houppier</th><th style="padding:5px 6px;text-align:right;font-weight:600;color:var(--stone);border-bottom:1px solid var(--border)">Ø Nébari</th><th style="border-bottom:1px solid var(--border)"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
       })()}
 
       <!-- Pot actuel -->
@@ -3460,12 +3461,12 @@ function showArbreModal(a){
     </div>
     <div class="form-section">Mensurations</div>
     <div class="form-row three">
-      <div class="fg"><label>Hauteur (cm)</label><input id="f-h" type="number" value="${isEdit?a.hauteur:30}"></div>
-      <div class="fg"><label>Ø Tronc (cm)</label><input id="f-dt" type="number" step="0.1" value="${isEdit?a.diam_tronc:3}"></div>
-      <div class="fg"><label>Ø Houppier (cm)</label><input id="f-dh" type="number" value="${isEdit?a.diam_houppier:25}"></div>
+      <div class="fg"><label>Hauteur (cm)</label><input id="f-h" type="number" value="${isEdit&&a.hauteur?a.hauteur:''}" placeholder="ex. 30"></div>
+      <div class="fg"><label>Ø Tronc (cm)</label><input id="f-dt" type="number" step="0.1" value="${isEdit&&a.diam_tronc?a.diam_tronc:''}" placeholder="ex. 3"></div>
+      <div class="fg"><label>Ø Houppier (cm)</label><input id="f-dh" type="number" value="${isEdit&&a.diam_houppier?a.diam_houppier:''}" placeholder="ex. 25"></div>
     </div>
     <div class="form-row">
-      <div class="fg"><label>Ø Nébari (cm)</label><input id="f-dn" type="number" step="0.5" value="${isEdit?a.diam_nebari:5}"></div>
+      <div class="fg"><label>Ø Nébari (cm)</label><input id="f-dn" type="number" step="0.5" value="${isEdit&&a.diam_nebari?a.diam_nebari:''}" placeholder="ex. 5"></div>
       <div class="fg" style="flex-direction:column;gap:4px"><label>Localisation</label>
         <div style="display:flex;gap:6px">
           <select id="f-loc-lieu" onchange="updateSousEmpl()" style="flex:1">
@@ -3654,7 +3655,8 @@ function saveArbre(id){
     // Enregistrer une entrée d'historique si les mensurations ont changé
     const fields = ['hauteur','diam_tronc','diam_houppier','diam_nebari'];
     const changed = fields.some(f => existing[f] !== data[f]);
-    if(changed){
+    const vide = fields.every(f=>!data[f]);   // champs vidés : pas de ligne « 0 cm » dans l'historique
+    if(changed && !vide){
       if(!existing.mesures) existing.mesures = [];
       const today = new Date().toISOString().split('T')[0];
       // Remplacer l'entrée du jour si elle existe déjà
@@ -3670,7 +3672,8 @@ function saveArbre(id){
     data.id=_prochainId(db.arbres,'nextId');data.travaux=[];data.photos=[];data.sante_obs=[];data.valuations=[];data.mesures=[];
     // Sauvegarder la mesure initiale
     const today = new Date().toISOString().split('T')[0];
-    data.mesures.push({date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari});
+    // Première mesure seulement si au moins une mensuration a été saisie
+    if(data.hauteur||data.diam_tronc||data.diam_houppier||data.diam_nebari) data.mesures.push({date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari});
     db.arbres.push(data);
     closeModal();
   }
@@ -4870,6 +4873,14 @@ function selectionnerTous(){
   if(allSel){ ids.forEach(id=>etiqSel.delete(id)); }
   else { ids.forEach(id=>etiqSel.add(id)); }
   render();
+}
+function supprimerMesure(arbreId, date){
+  const a = db.arbres.find(x=>x.id===arbreId);
+  if(!a || !a.mesures) return;
+  if(!confirm(`Supprimer la mesure du ${fmtDate(date)} ?\n\nLes mensurations actuelles de la fiche ne changent pas (modifiables avec ✏️).`)) return;
+  a.mesures = a.mesures.filter(m=>m.date!==date);
+  autoSave();
+  openDetail(arbreId);
 }
 function enregistrerMesures(arbreId){
   const a = db.arbres.find(x=>x.id===arbreId);
