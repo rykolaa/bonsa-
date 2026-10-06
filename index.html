@@ -1006,7 +1006,7 @@ function majLatinField(){
   }
 }
 
-let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], cultivars:[], travaux_types:[], collections_pots:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
+let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], arbresSupprimes:[], cultivars:[], travaux_types:[], collections_pots:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
 let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, completude:true, style:true, origine:true, espece:true, taille:false, alertes:false}};
 const etiqSel = new Set();
 
@@ -2200,6 +2200,7 @@ function lireOrientationExifDataUrl(dataUrl){
 // Applique la rotation EXIF sur un <img> avec dataUrl
 function appliquerRotationExif(img){
   if(!img.src||!img.src.startsWith('data:image')) return;
+  if(_autoOrient!==false) return;   // navigateur récent : déjà redressée
   const orient=lireOrientationExifDataUrl(img.src);
   const rotMap={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
   const rot=rotMap[orient]||'';
@@ -2216,6 +2217,7 @@ function appliquerRotationExif(img){
 
 // Correction d'orientation spécifique pour la lightbox
 function fixLightboxOrientation(img){
+  if(_autoOrient!==false) return;   // navigateur récent : déjà redressée
   const orient = lireOrientationExifDataUrl(img.src);
   if(orient===6||orient===8){
     // Portrait stocké en paysage : pivoter et adapter les dimensions
@@ -2300,24 +2302,28 @@ async function rotateLbPhoto(){
     };
     img.src = p.dataUrl;
   });
-  // Mettre à jour en mémoire et IDB
-  p.dataUrl = rotated;
-  // Trouver l'arbre et la photo pour mettre à jour
-  for(const a of db.arbres){
-    const ph = (a.photos||[]).find(x=>x.id===p.id);
-    if(ph){ ph.dataUrl = rotated; break; }
-  }
-  // Sauvegarder dans IDB — chercher l'arbreId pour construire la clé
+  // La photo pivotée reçoit un NOUVEL identifiant : la synchronisation l'enverra
+  // ainsi aux autres appareils (une photo modifiée sous le même identifiant
+  // ne serait pas renvoyée, et l'autre appareil garderait l'ancienne orientation).
+  const ancienId = p.id;
+  const nouvelId = 'p'+Date.now().toString(36)+'r'+Math.random().toString(36).slice(2,6);
   try{
-    let arbreId = null;
     for(const a of db.arbres){
-      if((a.photos||[]).find(x=>x.id===p.id)){ arbreId = a.id; break; }
-    }
-    if(arbreId !== null){
-      await idbSauverPhoto(arbreId, p.id, rotated);
+      const ph = (a.photos||[]).find(x=>x.id===ancienId);
+      if(!ph) continue;
+      await idbSauverPhoto(a.id, nouvelId, rotated);
+      ph.id = nouvelId; ph.dataUrl = rotated;
+      if(a.cover_photo_id===ancienId) a.cover_photo_id = nouvelId;
+      (a.travaux||[]).forEach(t=>{ if(Array.isArray(t.photosLinked)) t.photosLinked = t.photosLinked.map(x=>x===ancienId?nouvelId:x); });
+      try{ await idbSupprimerPhoto(a.id, ancienId); }catch(_){}
+      break;
     }
   }catch(e){ console.warn('IDB rotate error',e); }
-  autoSave();
+  p.id = nouvelId; p.dataUrl = rotated;
+  lbPhotos.forEach(x=>{ if(x.id===ancienId){ x.id = nouvelId; x.dataUrl = rotated; } });
+  if(state.selectedDetailId && document.getElementById('detail-overlay')?.style.display!=='none') { try{ openDetail(state.selectedDetailId); }catch(_){} }
+  try{ await sauvegarderLocal(); }catch(_){ autoSave(); }   // enregistrement immédiat
+  programmerSync(3000);
   showLightbox(); // Recharger la lightbox avec la photo pivotée
   afficherIndicateur('✅ Photo pivotée et sauvegardée');
 }
@@ -4013,12 +4019,26 @@ function supprimerObservation(arbreId, idx){
   closeModal(); openDetail(arbreId); render(); autoSave();
 }
 
+// Supprime des arbres et garde une trace (« pierre tombale ») pour que la
+// synchronisation les supprime partout, même s'ils ont été modifiés ailleurs.
+function _supprimerArbres(ids){
+  const set = new Set(ids.map(String));
+  const date = new Date().toISOString();
+  if(!db.arbresSupprimes) db.arbresSupprimes = [];
+  db.arbres.filter(a=>set.has(String(a.id))).forEach(a=>{
+    if((a.documents||[]).length) docIdbSupprimerArbre(a.id, a.documents);
+    db.arbresSupprimes.push({id:a.id, nom:a.nom, date});
+  });
+  db.arbres = db.arbres.filter(a=>!set.has(String(a.id)));
+  // Les rempotages de ces arbres libèrent leur pot
+  autoSave();
+}
 function deleteArbre(id){
-  if(!confirm('Supprimer cet arbre de la collection ?')) return;
-  const _aSuppr = db.arbres.find(a=>a.id===id);
-  if(_aSuppr && (_aSuppr.documents||[]).length) docIdbSupprimerArbre(_aSuppr.id, _aSuppr.documents);
-  db.arbres = db.arbres.filter(a=>a.id!==id);
-  closeDetail();render();
+  const a = db.arbres.find(x=>String(x.id)===String(id));
+  if(!confirm(`Supprimer « ${a?a.nom:'cet arbre'} » de la collection ?\n\nIl sera aussi supprimé sur vos autres appareils.`)) return;
+  _supprimerArbres([id]);
+  closeDetail(); render();
+  afficherIndicateur('🗑️ Arbre supprimé');
 }
 
 function scoreCompletudeArbre(a){
@@ -4118,8 +4138,7 @@ function renumdroterGroupes(groupes){
 
 function confirmerSuppressionDoublons(idsASupprimer){
   if(!confirm(`Confirmer la suppression définitive de ${idsASupprimer.length} fiche(s) en doublon ? Cette action ne peut pas être annulée (sauvegarde tes données avant si tu n'es pas sûr).`)) return;
-  db.arbres = db.arbres.filter(a=>!idsASupprimer.includes(a.id));
-  autoSave();
+  _supprimerArbres(idsASupprimer);
   closeModal();
   render();
   afficherIndicateur(`✅ ${idsASupprimer.length} fiche(s) en doublon supprimée(s)`);
@@ -7416,6 +7435,21 @@ async function chargerPhotosDepuisIDBProgressif(){
 // Lit l'orientation EXIF et fait pivoter le canvas en conséquence
 // Évite les "bandes de couleur" causées par les photos de smartphone rotées
 
+// Les navigateurs récents (Safari iPhone, Chrome, Edge, Firefox) redressent déjà
+// eux-mêmes les photos selon l'EXIF. Il ne faut alors PAS les tourner une 2e fois.
+// Test sur une mini image 2×1 marquée « tournée de 90° » : si le navigateur l'affiche
+// en 1×2, il applique l'orientation lui-même.
+let _autoOrient = null;
+function _navigateurOrienteExif(){
+  if(_autoOrient!==null) return Promise.resolve(_autoOrient);
+  return new Promise(res=>{
+    const img = new Image();
+    img.onload = ()=>{ _autoOrient = (img.naturalWidth===1 && img.naturalHeight===2); res(_autoOrient); };
+    img.onerror = ()=>{ _autoOrient = false; res(false); };
+    img.src = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAABAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDFoooryz7w/9k=';
+  });
+}
+_navigateurOrienteExif();
 function lireOrientationExif(dataUrl){
   // Parse les premiers octets du JPEG pour trouver le tag EXIF orientation (0x0112)
   try{
@@ -7463,7 +7497,8 @@ async function compresserPhoto(dataUrl, maxPx=1400, qualite=0.82){
       // Attendre que le décodage soit complet (évite les bandes sur certains navigateurs)
       if(img.decode) { try{ await img.decode(); }catch(e){} }
 
-      const orientation = lireOrientationExif(dataUrl);
+      // Orientation à appliquer à la main seulement si le navigateur ne le fait pas déjà
+      const orientation = (await _navigateurOrienteExif()) ? 1 : lireOrientationExif(dataUrl);
       const swap = (orientation >= 5 && orientation <= 8);
 
       const srcW = img.naturalWidth  || img.width;
@@ -7684,6 +7719,7 @@ function dbToCleanObj(){
     produits: db.produits||[],
     especes: db.especes||[],
     especesSupprimees: db.especesSupprimees||[],
+    arbresSupprimes: db.arbresSupprimes||[],
     cultivars: db.cultivars||[]
   };
 }
@@ -7868,7 +7904,7 @@ async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
     pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[], cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
   };
   const headerBytes = JSON.stringify(headerBase).length;
 
@@ -7956,7 +7992,7 @@ function sauvegarderJSON(){
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[],
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger,
       _note:'Photos (arbres et pots) stockées dans IndexedDB du navigateur. Utilisez "Export photos" pour une sauvegarde complète.'
     });
@@ -8012,7 +8048,7 @@ async function exporterAvecPhotos(){
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[],
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
     };
     await write(JSON.stringify(header).slice(0,-1) + ',"arbres":[');
@@ -8050,7 +8086,7 @@ async function exporterAvecPhotosBlob(){
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
     pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[],
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
   };
   parts.push(JSON.stringify(header).slice(0,-1)+',"arbres":[');
@@ -8116,7 +8152,7 @@ async function sauvegarderLocal(){
       pots:potsLeger, substrats:db.substrats||[],
       melanges:db.melanges||[], rempotages:db.rempotages||[],
       engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[],
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[],
       arbres:arbresLeger
     });
@@ -8405,6 +8441,7 @@ async function chargerLots(files){
       if(c.produits) db.produits=c.produits;
       if(c.especes) db.especes=c.especes;
       if(c.especesSupprimees) db.especesSupprimees=c.especesSupprimees;
+      if(c.arbresSupprimes) db.arbresSupprimes=c.arbresSupprimes;
       if(c.cultivars) db.cultivars=c.cultivars;
       if(c.travaux_types) db.travaux_types=c.travaux_types;
       if(c.nextId) db.nextId=c.nextId;
@@ -8534,6 +8571,7 @@ async function _chargerCollection(collection, preserverPhotos=false){
   if(collection.produits) db.produits=collection.produits;
   if(collection.especes) db.especes=collection.especes;
   if(collection.especesSupprimees) db.especesSupprimees=collection.especesSupprimees;
+  if(collection.arbresSupprimes) db.arbresSupprimes=collection.arbresSupprimes;
   if(collection.cultivars) db.cultivars=collection.cultivars;
   if(collection.travaux_types) db.travaux_types=collection.travaux_types;
   if(collection.nextPotId) db.nextPotId=collection.nextPotId;
@@ -8785,7 +8823,18 @@ function restaurerVersionIDB(idx){
   if(!v) return;
   const d = typeof v.data === 'string' ? v.data : JSON.stringify(v.data);
   if(!confirm(`Restaurer la version du ${new Date(v.savedAt).toLocaleString('fr-CH')} (${v.nbArbres} arbres) ?\n\nLa collection actuelle sera remplacée (les photos et documents restent sur l'appareil).`)) return;
-  try{ localStorage.setItem(STORAGE_KEY, d); }
+  let dd = d;
+  try{
+    // Arbres supprimés depuis cette version : on les marque « restaurés » pour que
+    // la synchronisation ne les supprime pas à nouveau.
+    const o = JSON.parse(d); const now = new Date().toISOString();
+    const tombes = new Set((db.arbresSupprimes||[]).map(t=>String(t.id)));
+    let n = 0;
+    (o.arbres||[]).forEach(a=>{ if(tombes.has(String(a.id))){ a._restaureLe = now; n++; } });
+    o.arbresSupprimes = (db.arbresSupprimes||[]).filter(t=>!(o.arbres||[]).some(a=>String(a.id)===String(t.id)));
+    dd = JSON.stringify(o);
+  }catch(_){}
+  try{ localStorage.setItem(STORAGE_KEY, dd); }
   catch(e){ alert('❌ Restauration impossible : '+e.message); return; }
   closeModal();
   location.reload();
@@ -9111,6 +9160,7 @@ async function initialiser(){
         if(collection.produits) db.produits = collection.produits;
         if(collection.especes) db.especes = collection.especes;
         if(collection.especesSupprimees) db.especesSupprimees = collection.especesSupprimees;
+        if(collection.arbresSupprimes) db.arbresSupprimes = collection.arbresSupprimes;
       if(collection.cultivars) db.cultivars = collection.cultivars;
         if(collection.travaux_types) db.travaux_types = collection.travaux_types;
         if(collection.nextPotId) db.nextPotId = collection.nextPotId;
@@ -9484,8 +9534,7 @@ function masseSupprimer(){
   const ids = [...etiqSel];
   const n = ids.length;
   if(!confirm('Supprimer définitivement '+n+' arbre'+(n>1?'s':'')+' ? Cette action est irréversible.')) return;
-  db.arbres = db.arbres.filter(a=>!ids.includes(a.id));
-  autoSave();
+  _supprimerArbres(ids);
   etiqSel.clear();
   render();
 }
@@ -10265,7 +10314,20 @@ function _fusionTableaux(b, l, r, ctx){
 }
 function fusionnerCollections(base, local, distant){
   _canonCache = new WeakMap();
-  return _fusion(base||undefined, local, distant, {premiere: !base}, '');
+  const m = _fusion(base||undefined, local, distant, {premiere: !base}, '');
+  // Arbres supprimés : la suppression gagne toujours, même si l'arbre a été modifié
+  // ailleurs entre-temps (sauf s'il a été restauré volontairement après la suppression).
+  const tombes = new Map();
+  [base, local, distant].forEach(c=>((c&&c.arbresSupprimes)||[]).forEach(t=>{
+    if(!t || t.id===undefined) return;
+    const k = String(t.id), prec = tombes.get(k);
+    if(!prec || (t.date||'') > (prec.date||'')) tombes.set(k, t);
+  }));
+  if(m && tombes.size){
+    m.arbres = (m.arbres||[]).filter(a=>{ const t = tombes.get(String(a.id)); return !t || (a._restaureLe && a._restaureLe > (t.date||'')); });
+    m.arbresSupprimes = [...tombes.values()].sort((x,y)=>(y.date||'').localeCompare(x.date||'')).slice(0, 2000);
+  }
+  return m;
 }
 
 // Collection telle qu'elle est synchronisée (sans champs volatils ni images)
@@ -10282,7 +10344,7 @@ function _appliquerCollectionSync(c){
   (db.pots||[]).forEach(pt=>(pt.photos||[]).forEach(p=>{ if(p.dataUrl) urls.set(_photoKey('pot_'+pt.id,p.id), p.dataUrl); }));
   db.arbres = (c.arbres||[]).map(a=>({...a, photos:(a.photos||[]).map(p=>({...p, dataUrl: urls.get(_photoKey(a.id,p.id))||null}))}));
   db.pots = (c.pots||[]).map(pt=>({...pt, photos:(pt.photos||[]).map(p=>({...p, dataUrl: urls.get(_photoKey('pot_'+pt.id,p.id))||null}))}));
-  ['substrats','melanges','rempotages','engrais','produits','especes','especesSupprimees','cultivars','travaux_types']
+  ['substrats','melanges','rempotages','engrais','produits','especes','especesSupprimees','arbresSupprimes','cultivars','travaux_types']
     .forEach(k=>{ if(Array.isArray(c[k])) db[k] = c[k]; });
   ['nextId','nextPotId','nextSubId','nextMelId','nextRempId','nextEngId','nextProdId']
     .forEach(k=>{ db[k] = Math.max(Number(db[k])||1, Number(c[k])||1); });
@@ -11052,7 +11114,7 @@ async function dropboxSauvegarder(){
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[],
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger,
       _note:'Synchronisation Dropbox — sans photos'
     });
@@ -11139,7 +11201,7 @@ function _buildSyncPayloadRaw(){
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
     pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbresSupprimes:db.arbresSupprimes||[],
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
   };
   return raw;
