@@ -77,6 +77,19 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 }
 .flt-voir{display:none}
 @media(max-width:700px){ .flt-voir{display:block} }
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-head{font-size:10.5px;font-weight:600;color:var(--stone);text-align:center;padding:2px 0;text-transform:uppercase;letter-spacing:.04em}
+.cal-case{min-height:74px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:3px 4px;cursor:pointer;overflow:hidden}
+.cal-case:hover{border-color:var(--moss-mid)}
+.cal-case.vide{background:transparent;border:none;cursor:default}
+.cal-case.auj{border:2px solid var(--moss)}
+.cal-case.retard{background:var(--rust-light)}
+.cal-num{font-size:11px;font-weight:700;color:var(--stone)}
+.cal-it{display:flex;align-items:center;gap:3px;font-size:10px;line-height:1.25;white-space:nowrap;overflow:hidden}
+.cal-it span{overflow:hidden;text-overflow:ellipsis}
+.cal-plus,.cal-fait{font-size:9.5px;color:var(--stone)}
+.cal-fait{color:var(--moss)}
+@media(max-width:700px){ .cal-case{min-height:46px} .cal-it span{display:none} }
 .sidebar-toggle-fab{display:none;position:fixed;bottom:24px;left:24px;z-index:150;background:var(--moss);color:#fff;border:none;border-radius:50%;width:52px;height:52px;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.25);cursor:pointer;align-items:center;justify-content:center}
 .sidebar-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:140}
 .sidebar-backdrop.show{display:block}
@@ -400,6 +413,9 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
         <label class="topbar-dd-btn" style="cursor:pointer">📂 Charger un fichier<input type="file" accept=".json" multiple style="display:none" onchange="toggleDropdown('donnees-dd');chargerJSON(this)"></label>
         <hr style="margin:4px 0;border:none;border-top:1px solid var(--border)">
         <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');ouvrirVersions()">🕐 Versions</button>
+        <hr style="margin:4px 0;border:none;border-top:1px solid var(--border)">
+        <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');exporterExcel()">📊 Export Excel</button>
+        <button class="topbar-dd-btn" onclick="toggleDropdown('donnees-dd');ouvrirExportZip()">📦 Export complet (ZIP)</button>
       </div>
     </div>
 
@@ -439,6 +455,9 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
       📂 Charger un fichier
       <input type="file" accept=".json" multiple style="display:none" onchange="chargerJSON(this);toggleMobileMenu()">
     </label>
+    <button class="mob-btn" style="background:#185fa5" onclick="ouvrirVersions();toggleMobileMenu()">🕐 Versions</button>
+    <button class="mob-btn" style="background:#185fa5" onclick="exporterExcel();toggleMobileMenu()">📊 Export Excel</button>
+    <button class="mob-btn" style="background:#185fa5" onclick="ouvrirExportZip();toggleMobileMenu()">📦 Export complet (ZIP)</button>
     <hr style="border-color:rgba(255,255,255,.1);margin:4px 0">
     <button class="mob-btn" style="background:#4a5568" onclick="diagnostiquerPhotos();toggleMobileMenu()">🔎 Diagnostic photos manquantes</button>
     <button class="mob-btn" style="background:#4a5568" onclick="diagnostiquerStockage();toggleMobileMenu()">🔎 Diagnostic stockage</button>
@@ -613,6 +632,16 @@ function optionsPotsParFabricant(occ, selectedId, labelFn){
   }).join('');
 }
 
+// Stock d'un mélange et de ses substrats : signe -1 = consommer, +1 = rendre
+function _stockMelange(melId, litres, signe){
+  if(!melId || !litres) return;
+  const mel = db.melanges.find(x=>x.id===melId); if(!mel) return;
+  mel.litres_total = Math.max(0, (mel.litres_total||0) + signe*litres);
+  (mel.composants||[]).forEach(c=>{
+    const sb = db.substrats.find(x=>x.id===c.sub_id);
+    if(sb) sb.litres_restants = Math.max(0, (sb.litres_restants||0) + signe*litres*c.pct/100);
+  });
+}
 function potsEnUsage(excludeArbreId){
   const map = {};
   db.arbres.forEach(a=>{
@@ -1681,21 +1710,36 @@ function reporterSoinsDepasses(action){
   afficherIndicateur(msg);
 }
 
+// Le type de soin est-il dans sa saison d'alerte (plages à cheval sur l'année gérées) ?
+function _soinEnSaison(type){
+  const def = getTravaux().find(t=>t.nom===type);
+  if(!def?.mois_debut || !def?.mois_fin) return true;
+  const m = new Date().getMonth()+1, d = def.mois_debut, f = def.mois_fin;
+  return d<=f ? (m>=d && m<=f) : (m>=d || m<=f);
+}
+// Exactement les soins affichés dans le bandeau « Soins à prévoir »
+function _soinsDuBandeau(){
+  const out = [];
+  db.arbres.forEach(a=>getSoinsPlanifies(a).forEach(s=>{
+    const j = daysUntil(s.date);
+    if(j===null || j>14 || j<0 || !_soinEnSaison(s.type)) return;
+    out.push({a, s, j});
+  }));
+  return out.sort((x,y)=>x.j-y.j);
+}
 function validerTousSoinsUrgents(event){
   if(event) event.stopPropagation();
   const today = new Date().toISOString().split('T')[0];
-  // Reconstruire la liste des soins urgents
-  const moisActuel = new Date().getMonth()+1;
+  const liste = _soinsDuBandeau();
+  if(!liste.length){ afficherIndicateur('Aucun soin à valider'); return; }
+  const apercu = liste.slice(0,15).map(x=>`• ${x.a.nom} — ${x.s.type} (${fmtDate(x.s.date)})`).join('\n') + (liste.length>15 ? `\n… et ${liste.length-15} autre(s)` : '');
+  if(!confirm(`Valider ${liste.length} soin${liste.length>1?'s':''} comme effectué${liste.length>1?'s':''} AUJOURD'HUI ?\n\n${apercu}\n\nChaque soin sera ajouté à l'historique de l'arbre puis reprogrammé selon sa fréquence.`)) return;
+  const aValider = new Map();
+  liste.forEach(x=>{ if(!aValider.has(x.a)) aValider.set(x.a, []); aValider.get(x.a).push(x.s); });
   let count = 0;
   db.arbres.forEach(a=>{
-    const soins = getSoinsPlanifies(a);
-    soins.forEach(soin=>{
-      const j = daysUntil(soin.date);
-      if(j === null || j > 14) return;
-      const def = getTravaux().find(t=>t.nom===soin.type);
-      if(def && def.mois_debut && def.mois_fin){
-        if(moisActuel < def.mois_debut || moisActuel > def.mois_fin) return;
-      }
+    if(!aValider.has(a)) return;
+    aValider.get(a).forEach(soin=>{
       // Enregistrer dans l'historique
       if(!a.travaux) a.travaux=[];
       a.travaux.unshift({date:today, type:soin.type, desc:'', cout:getSoinCoutPourArbre(soin.type,a), photosLinked:[]});
@@ -1824,16 +1868,7 @@ function renderCollection(c){
     getSoinsPlanifies(a).forEach(s=>{
       const j = daysUntil(s.date);
       if(j===null || j>14 || j<0) return;
-      // Vérifier la plage saisonnière
-      const typeDef = getTravaux().find(t=>t.nom===s.type);
-      if(typeDef?.mois_debut && typeDef?.mois_fin){
-        const debut = typeDef.mois_debut;
-        const fin   = typeDef.mois_fin;
-        const dansPlage = debut<=fin
-          ? (moisActuel>=debut && moisActuel<=fin)
-          : (moisActuel>=debut || moisActuel<=fin); // plage qui chevauche l'année
-        if(!dansPlage) return; // hors saison → pas d'alerte
-      }
+      if(!_soinEnSaison(s.type)) return; // hors saison → pas d'alerte
       tousLesSoins.push({arbre:a, soin:s, j});
     });
   });
@@ -1981,7 +2016,7 @@ function renderTravaux(c){
   const f = state.travFlt;
 
   let filtered = allTrav.filter(t=>{
-    if(f.q && !t.arbre.toLowerCase().includes(f.q) && !(t.desc||'').toLowerCase().includes(f.q) && !t.type.toLowerCase().includes(f.q)) return false;
+    if(f.q){ const q=String(f.q).toLowerCase(); if(!t.arbre.toLowerCase().includes(q) && !(t.desc||'').toLowerCase().includes(q) && !t.type.toLowerCase().includes(q)) return false; }
     if(f.type && t.type!==f.type) return false;
     if(f.arbre && t.arbreId!==parseInt(f.arbre)) return false;
     if(f.year && !t.date.startsWith(f.year)) return false;
@@ -1997,6 +2032,7 @@ function renderTravaux(c){
     <div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="font-family:var(--ff-display);font-size:20px;font-weight:400">Journal des travaux</div>
+        <button class="btn" onclick="ouvrirCalendrier()">📅 Calendrier</button>
         <button class="btn btn-primary" onclick="openTravailModal(0)">＋ Ajouter un travail</button>
       </div>
       <div class="trav-toolbar">
@@ -2535,9 +2571,10 @@ async function lireDateExif(file){
 
 // Filtrer uniquement les JPEG et exclure les doublons (même nom + même taille)
 function filtrerImages(fileList){
+  // JPEG, mais aussi HEIC (iPhone), PNG, WebP : tout est converti en JPEG à l'enregistrement
   const tous = [...fileList].filter(f=>
-    f.type==='image/jpeg' ||
-    /\.(jpe?g)$/i.test(f.name)
+    /^image\/(jpeg|pjpeg|heic|heif|png|webp)$/i.test(f.type||'') ||
+    /\.(jpe?g|heic|heif|png|webp)$/i.test(f.name)
   );
   // Dédoublonnage : clé = nom de fichier sans chemin + taille en octets
   const vus = new Set();
@@ -2691,6 +2728,7 @@ async function savePhotos(){
 
   const nouvelles = [];
   let totalAvant = 0, totalApres = 0;
+  window._photosIllisibles = [];
 
   for(let i=0; i<queue.length; i++){
     const {file, date} = queue[i];
@@ -2704,8 +2742,13 @@ async function savePhotos(){
       reader.readAsDataURL(file);
     });
 
-    // Redimensionner : max 1200px côté long, qualité 0.80
+    // Redimensionner : max 1200px côté long, qualité 0.80 (convertit aussi HEIC/PNG en JPEG)
     const dataUrl = await compresserPhoto(dataUrlBrut, 1200, 0.80);
+    if(!/^data:image\/jpeg/i.test(dataUrl)){
+      // Format que ce navigateur ne sait pas décoder (ex. HEIC sur PC) : on ne l'enregistre pas
+      (window._photosIllisibles = window._photosIllisibles || []).push(file.name);
+      continue;
+    }
 
     totalAvant  += Math.round(dataUrlBrut.length * 0.75 / 1024); // taille originale en KB
     totalApres  += Math.round(dataUrl.length    * 0.75 / 1024); // taille compressée en KB
@@ -2728,16 +2771,16 @@ async function savePhotos(){
 
   window._photoFilesQueue = [];
   closeModal();
-  if(state.page==='galerie') renderGalerie(document.getElementById('content'));
+  if(document.getElementById('photos-du-jour-list')){
+    // Retour au formulaire du travail : on actualise ses photos du jour
+    updateTravailPhotos();
+  } else if(state.page==='galerie') renderGalerie(document.getElementById('content'));
   else if(state.selectedDetailId) openDetail(state.selectedDetailId);
   autoSave();
   afficherIndicateur(msg);
-
-  window._photoFilesQueue = [];
-  closeModal();
-  if(state.page==='galerie') renderGalerie(document.getElementById('content'));
-  else if(state.selectedDetailId) openDetail(state.selectedDetailId);
-  autoSave();
+  const ill = window._photosIllisibles||[];
+  if(ill.length) alert(`⚠️ ${ill.length} photo${ill.length>1?'s':''} n'${ill.length>1?'ont':'a'} pas pu être lue${ill.length>1?'s':''} par ce navigateur (format HEIC de l'iPhone) :\n${ill.slice(0,8).join('\n')}${ill.length>8?'\n…':''}\n\nAjoutez-les depuis l'iPhone (l'app les convertit automatiquement), ou réglez l'iPhone sur Réglages → Appareil photo → Formats → « Le plus compatible ».`);
+  window._photosIllisibles = [];
 }
 
 // Échappe les caractères HTML pour usage sûr dans innerHTML
@@ -2771,41 +2814,62 @@ function deletePhoto(arbreId, photoId){
   autoSave();
 }
 
-function nettoyerPhotosFantomes(arbreId){
-  const a = db.arbres.find(x=>x.id===arbreId);
-  if(!a) return;
-  const fantomes = (a.photos||[]).filter(p=>!p.dataUrl);
-  if(!fantomes.length){ afficherIndicateur('Aucune photo fantôme trouvée'); return; }
-  if(!confirm(`Supprimer définitivement ${fantomes.length} photo${fantomes.length>1?'s':''} fantôme${fantomes.length>1?'s':''} (sans image) pour "${a.nom}" ?`)) return;
-  fantomes.forEach(p=>{
-    a.photos = a.photos.filter(x=>x.id!==p.id);
-    idbSupprimerPhoto(arbreId, p.id);
-  });
-  autoSave();
-  openDetail(arbreId);
-  afficherIndicateur(`🧹 ${fantomes.length} photo${fantomes.length>1?'s':''} fantôme${fantomes.length>1?'s':''} supprimée${fantomes.length>1?'s':''}`);
+// Parmi des photos sans image ici, lesquelles existent encore sur GitHub ?
+// → {surGitHub:Set(clés), verifie:bool, erreur:string}
+async function _fantomesSurGitHub(cles){
+  const cfg = ghCfg();
+  if(!cfg) return {surGitHub:new Set(), verifie:false, erreur:''};
+  try{
+    afficherIndicateur('⏳ Vérification des photos sur GitHub…');
+    const tete = await ghTete(cfg);
+    if(!tete) return {surGitHub:new Set(), verifie:true, erreur:''};
+    const fichiers = await ghFichiers(cfg, tete.treeSha);
+    const idxSha = fichiers['media/index.json'];
+    const index = idxSha ? (JSON.parse(await ghBlobTexte(cfg, idxSha)).items || {}) : {};
+    return {surGitHub:new Set(cles.filter(k=>index[k] && fichiers[index[k]])), verifie:true, erreur:''};
+  }catch(e){
+    return {surGitHub:new Set(), verifie:false, erreur:e.message||String(e)};
+  }
 }
-
-function nettoyerTousFantomes(){
-  let totalFantomes = 0;
-  let arbresAffectes = 0;
+// Liste [{a, p, cle}] des photos sans image pour un arbre (ou toute la collection)
+function _listeFantomes(arbreId){
+  const out = [];
   db.arbres.forEach(a=>{
-    const nb = (a.photos||[]).filter(p=>!p.dataUrl).length;
-    if(nb>0){ totalFantomes+=nb; arbresAffectes++; }
+    if(arbreId!=null && a.id!==arbreId) return;
+    (a.photos||[]).forEach(p=>{ if(!p.dataUrl) out.push({a, p, cle:'ph:'+_photoKey(a.id,p.id)}); });
   });
-  if(!totalFantomes){ afficherIndicateur('✅ Aucune photo fantôme dans la collection'); return; }
-  if(!confirm(`Supprimer ${totalFantomes} photo${totalFantomes>1?'s':''} fantôme${totalFantomes>1?'s':''} sur ${arbresAffectes} arbre${arbresAffectes>1?'s':''} ?`)) return;
-  db.arbres.forEach(a=>{
-    const fantomes = (a.photos||[]).filter(p=>!p.dataUrl);
-    fantomes.forEach(p=>{
-      a.photos = a.photos.filter(x=>x.id!==p.id);
-      idbSupprimerPhoto(a.id, p.id);
-    });
-  });
-  autoSave();
-  render();
-  afficherIndicateur(`🧹 ${totalFantomes} photo${totalFantomes>1?'s':''} fantôme${totalFantomes>1?'s':''} supprimée${totalFantomes>1?'s':''} sur ${arbresAffectes} arbre${arbresAffectes>1?'s':''}`);
+  return out;
 }
+async function _nettoyerFantomes(arbreId){
+  const tous = _listeFantomes(arbreId);
+  if(!tous.length){ afficherIndicateur(arbreId!=null ? 'Aucune photo fantôme trouvée' : '✅ Aucune photo fantôme dans la collection'); return; }
+  const v = await _fantomesSurGitHub(tous.map(x=>x.cle));
+  if(ghCfg() && !v.verifie){
+    alert(`Impossible de vérifier sur GitHub (${v.erreur}).\n\nPar sécurité, rien n'a été supprimé : ces photos existent peut-être encore sur GitHub ou sur un autre appareil. Réessayez avec une connexion Internet.`);
+    afficherIndicateur('');
+    return;
+  }
+  const perdus = tous.filter(x=>!v.surGitHub.has(x.cle));
+  const aRecevoir = tous.length - perdus.length;
+  if(!perdus.length){
+    alert(`Les ${tous.length} photo${tous.length>1?'s':''} manquante${tous.length>1?'s':''} ${tous.length>1?'sont':'est'} bien sur GitHub : rien à supprimer.\n\nLa synchronisation va les télécharger sur cet appareil.`);
+    syncGitHub({manuel:true});
+    return;
+  }
+  const nbArbres = new Set(perdus.map(x=>x.a.id)).size;
+  let msg = `${perdus.length} photo${perdus.length>1?'s':''} sans image ici ni sur GitHub`+(arbreId!=null ? ` pour « ${perdus[0].a.nom} »` : ` (${nbArbres} arbre${nbArbres>1?'s':''})`)+'.';
+  if(aRecevoir) msg += `\n\n${aRecevoir} autre${aRecevoir>1?'s':''} photo${aRecevoir>1?'s':''} manquante${aRecevoir>1?'s':''} ${aRecevoir>1?'sont':'est'} sur GitHub : elle${aRecevoir>1?'s':''} ser${aRecevoir>1?'ont':'a'} conservée${aRecevoir>1?'s':''} et téléchargée${aRecevoir>1?'s':''}.`;
+  if(!ghCfg()) msg += `\n\n⚠️ La synchronisation n'est pas connectée sur cet appareil : impossible de vérifier si un autre appareil possède ces photos.`;
+  msg += `\n\nSupprimer définitivement ces ${perdus.length} référence${perdus.length>1?'s':''} ?`;
+  if(!confirm(msg)){ afficherIndicateur(''); return; }
+  perdus.forEach(({a,p})=>{ a.photos = a.photos.filter(x=>x.id!==p.id); idbSupprimerPhoto(a.id, p.id); });
+  autoSave();
+  if(arbreId!=null) openDetail(arbreId); else render();
+  afficherIndicateur(`🧹 ${perdus.length} photo${perdus.length>1?'s':''} fantôme${perdus.length>1?'s':''} supprimée${perdus.length>1?'s':''}`+(aRecevoir?` · ${aRecevoir} conservée${aRecevoir>1?'s':''} (sur GitHub)`:''));
+  if(aRecevoir) syncGitHub({manuel:true});
+}
+function nettoyerPhotosFantomes(arbreId){ return _nettoyerFantomes(arbreId); }
+function nettoyerTousFantomes(){ return _nettoyerFantomes(null); }
 
 function deletePhotoDetail(arbreId, photoId){
   if(!confirm('Supprimer cette photo ?')) return;
@@ -3075,6 +3139,7 @@ function openDetail(id){
       <button class="btn btn-icon" style="flex-shrink:0" onclick="openTravailModal(${a.id})" title="Ajouter travail">✂️</button>
       <button class="btn btn-icon" style="flex-shrink:0" onclick="openPhotoModal(${a.id})" title="Ajouter photo">📷</button>
       <button class="btn btn-icon" style="flex-shrink:0" onclick="ouvrirDiaporamaArbre(${a.id})" title="Diaporama de cet arbre" ${!(a.photos||[]).some(p=>p.dataUrl)?'disabled style="opacity:.35"':''}>▶</button>
+      ${(a.photos||[]).filter(p=>p.dataUrl).length>=2?`<button class="btn btn-icon" style="flex-shrink:0" onclick="ouvrirComparaison(${a.id})" title="Comparer avant / après">⇆</button>`:''}
     </div>
   </div>
 
@@ -3233,7 +3298,7 @@ function openDetail(id){
       ${a.notes?`<div class="dp-section-title">Notes</div><div class="notes-box">${a.notes}</div>`:''}
 
       <!-- Observations santé -->
-      ${(a.sante_obs||[]).length?`<div class="dp-section-title">Observations santé</div>${a.sante_obs.map(o=>`<div style="background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:9px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:var(--stone)">${fmtDate(o.date)}</span>${o.dateCtrl?`<span style="font-size:11px;color:var(--stone)">Contrôle: ${fmtDate(o.dateCtrl)}</span>`:''}</div>${o.probleme?`<div style="font-size:12px;color:var(--rust)">⚠️ ${o.probleme}</div>`:''}${o.diagnostic?`<div style="font-size:12px;color:var(--stone)">🔍 ${o.diagnostic}</div>`:''}${o.traitement?`<div style="font-size:12px;color:var(--moss)">💊 ${o.traitement}</div>`:''}${o.resultat?`<div style="font-size:12px;color:var(--gold)">✓ ${o.resultat}</div>`:''}</div>`).join('')}`:''}
+      ${(a.sante_obs||[]).length?`<div class="dp-section-title">Observations santé</div>${a.sante_obs.map((o,oi)=>`<div style="background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:9px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;gap:6px"><span style="font-size:11px;color:var(--stone)">${fmtDate(o.date)}</span>${o.dateCtrl?`<span style="font-size:11px;color:var(--stone)">Contrôle: ${fmtDate(o.dateCtrl)}</span>`:''}<span style="margin-left:auto;white-space:nowrap"><button class="btn btn-icon" style="border:none;font-size:13px;padding:2px 5px" title="Modifier" onclick="openSanteModal(${a.id},${oi})">✏️</button><button class="btn btn-icon" style="border:none;font-size:13px;padding:2px 5px;color:var(--rust)" title="Supprimer" onclick="supprimerObservation(${a.id},${oi})">✕</button></span></div>${o.probleme?`<div style="font-size:12px;color:var(--rust)">⚠️ ${o.probleme}</div>`:''}${o.diagnostic?`<div style="font-size:12px;color:var(--stone)">🔍 ${o.diagnostic}</div>`:''}${o.traitement?`<div style="font-size:12px;color:var(--moss)">💊 ${o.traitement}</div>`:''}${o.resultat?`<div style="font-size:12px;color:var(--gold)">✓ ${o.resultat}</div>`:''}</div>`).join('')}`:''}
 
       <!-- Valuations -->
       ${(a.valuations||[]).length?`<div class="dp-section-title">Valuations</div>${a.valuations.map(v=>`<div class="valeur-item"><div><div style="font-size:12px;font-weight:500">${v.motif||'Estimation'}</div><div style="font-size:11px;color:var(--stone)">${fmtDate(v.date)}</div></div><div class="valeur-montant">${fmtCHF(v.valeur)}</div></div>`).join('')}`:''}
@@ -3794,14 +3859,12 @@ function openPhotoModalFromTravail(){
   if(!arbreEl||!dateEl) return;
   const arbreId = parseInt(arbreEl.value);
   const date = dateEl.value;
+  // La fenêtre du travail est mise de côté (avec tout ce qui est déjà saisi)
+  // et revient automatiquement après l'ajout des photos ou « Annuler ».
+  window._modalPile = window._modalPile || [];
+  empilerModal();
   openPhotoModal(arbreId);
   setTimeout(()=>{const d=document.getElementById('f-pdate');if(d)d.value=date;},50);
-  const origSave = window.savePhotos;
-  window.savePhotos = function(){
-    origSave();
-    window.savePhotos = origSave;
-    updateTravailPhotos();
-  };
 }
 
 function saveTravail(arbreId, travailIdx){
@@ -3846,26 +3909,18 @@ function saveTravail(arbreId, travailIdx){
     }
 
     const existingRempId = parseInt(document.getElementById('f-remp-id')?.value||0)||null;
-    if(existingRempId){
-      const existing = db.rempotages.find(x=>x.id===existingRempId);
-      if(existing){ Object.assign(existing, rempData); rempId = existingRempId; }
+    const existing = existingRempId ? db.rempotages.find(x=>x.id===existingRempId) : null;
+    if(existing){
+      // Modification : on rend d'abord ce qui avait été déduit, puis on déduit la nouvelle quantité
+      _stockMelange(existing.melange_id, existing.litres_utilises, +1);
+      rempData.photos = existing.photos||[]; rempData.videos = existing.videos||[];
+      Object.assign(existing, rempData); rempId = existingRempId;
     } else {
       rempData.id = _prochainId(db.rempotages,'nextRempId');
       db.rempotages.push(rempData);
       rempId = rempData.id;
     }
-
-    // Déduire du stock de mélange
-    if(melIdNum && litres){
-      const mel = db.melanges.find(x=>x.id===melIdNum);
-      if(mel){
-        mel.litres_total = Math.max(0,(mel.litres_total||0)-litres);
-        mel.composants.forEach(comp=>{
-          const s = db.substrats.find(x=>x.id===comp.sub_id);
-          if(s) s.litres_restants = Math.max(0,(s.litres_restants||0)-(litres*comp.pct/100));
-        });
-      }
-    }
+    _stockMelange(melIdNum, litres, -1);
     // Mettre à jour le pot
     if(potIdNum){
       const pot = db.pots.find(p=>p.id===potIdNum);
@@ -3894,38 +3949,65 @@ function saveTravail(arbreId, travailIdx){
   autoSave();
 }
 
-function openSanteModal(arbreId){
+function openSanteModal(arbreId, obsIdx){
+  const edit = (obsIdx!==undefined && obsIdx!==null && obsIdx>=0);
+  const a0 = arbreId ? db.arbres.find(x=>x.id===arbreId) : null;
+  const o = edit && a0 ? (a0.sante_obs||[])[obsIdx]||{} : {};
+  const v = k => esc(o[k]||'');
   const m = document.getElementById('modal');
   m.innerHTML=`<div class="modal-head">
-    <div class="modal-title">Observation sanitaire</div>
+    <div class="modal-title">${edit?'Modifier l\'observation':'Observation sanitaire'}</div>
     <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
   </div>
   <div class="modal-body">
-    <div class="fg" style="margin-bottom:12px"><label>Arbre *</label><select id="f-sarbre">${db.arbres.map(x=>`<option value="${x.id}">${getEmoji(x.espece)} ${x.nom}</option>`).join('')}</select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Arbre *</label><select id="f-sarbre" ${edit?'disabled':''} onchange="const a=db.arbres.find(x=>x.id===parseInt(this.value)); const s=document.getElementById('f-ssante'); if(a&&s) s.value=a.sante;">${db.arbres.map(x=>`<option value="${x.id}" ${x.id===arbreId?'selected':''}>${getEmoji(x.espece)} ${esc(x.nom)}</option>`).join('')}</select></div>
     <div class="form-row">
-      <div class="fg"><label>Date observation</label><input id="f-sdate" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
-      <div class="fg"><label>Date contrôle prévu</label><input id="f-sctrl" type="date"></div>
+      <div class="fg"><label>Date observation</label><input id="f-sdate" type="date" value="${o.date||new Date().toISOString().split('T')[0]}"></div>
+      <div class="fg"><label>Date contrôle prévu</label><input id="f-sctrl" type="date" value="${o.dateCtrl||''}" onchange="const r=document.getElementById('f-srappel-row'); if(r) r.style.display=this.value?'':'none';"></div>
     </div>
-    <div class="form-row one"><div class="fg"><label>Problème constaté</label><input id="f-sprob" placeholder="Ex: Jaunissement foliaire"></div></div>
-    <div class="form-row one"><div class="fg"><label>Diagnostic</label><input id="f-sdiag" placeholder="Ex: Chlorose ferrique"></div></div>
-    <div class="form-row one"><div class="fg"><label>Traitement appliqué</label><input id="f-strait" placeholder="Ex: Chélate de fer en foliaire"></div></div>
-    <div class="form-row one"><div class="fg"><label>Résultat</label><input id="f-sresult" placeholder="Ex: Amélioration après 2 semaines"></div></div>
+    <label id="f-srappel-row" style="display:${o.dateCtrl&&!edit?'':'none'};font-size:12.5px;margin:-4px 0 10px;cursor:pointer"><input type="checkbox" id="f-srappel" ${edit?'':'checked'}> Planifier un rappel « 🔍 Observation » à la date de contrôle</label>
+    <div class="form-row one"><div class="fg"><label>Problème constaté</label><input id="f-sprob" value="${v('probleme')}" placeholder="Ex: Jaunissement foliaire"></div></div>
+    <div class="form-row one"><div class="fg"><label>Diagnostic</label><input id="f-sdiag" value="${v('diagnostic')}" placeholder="Ex: Chlorose ferrique"></div></div>
+    <div class="form-row one"><div class="fg"><label>Traitement appliqué</label><input id="f-strait" value="${v('traitement')}" placeholder="Ex: Chélate de fer en foliaire"></div></div>
+    <div class="form-row one"><div class="fg"><label>Résultat</label><input id="f-sresult" value="${v('resultat')}" placeholder="Ex: Amélioration après 2 semaines"></div></div>
+    <div class="form-row one"><div class="fg"><label>Santé de l'arbre (%) — mise à jour de la fiche</label><input id="f-ssante" type="number" min="0" max="100" value="${(a0||db.arbres[0]||{}).sante??85}"></div></div>
   </div>
   <div class="modal-footer">
+    ${edit?`<button class="btn" style="margin-right:auto;color:var(--rust)" onclick="supprimerObservation(${arbreId},${obsIdx})">🗑️ Supprimer</button>`:''}
     <button class="btn" onclick="closeModal()">Annuler</button>
-    <button class="btn btn-primary" onclick="saveSante()">✓ Enregistrer</button>
+    <button class="btn btn-primary" onclick="saveSante(${edit?obsIdx:-1})">✓ Enregistrer</button>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
 }
 
-function saveSante(){
+function saveSante(obsIdx=-1){
   const id = parseInt(document.getElementById('f-sarbre').value);
   const a = db.arbres.find(x=>x.id===id);
   if(!a) return;
   const obs = {date:document.getElementById('f-sdate').value,probleme:document.getElementById('f-sprob').value,diagnostic:document.getElementById('f-sdiag').value,traitement:document.getElementById('f-strait').value,resultat:document.getElementById('f-sresult').value,dateCtrl:document.getElementById('f-sctrl').value};
   if(!a.sante_obs)a.sante_obs=[];
-  a.sante_obs.unshift(obs);
-  closeModal();render();
+  if(obsIdx>=0 && a.sante_obs[obsIdx]) a.sante_obs[obsIdx] = obs;
+  else a.sante_obs.unshift(obs);
+  a.sante_obs.sort((x,y)=>(y.date||'').localeCompare(x.date||''));
+  const sv = parseInt(document.getElementById('f-ssante')?.value);
+  if(!isNaN(sv)) a.sante = Math.max(0, Math.min(100, sv));
+  if(obs.dateCtrl && document.getElementById('f-srappel')?.checked){
+    if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
+    if(!a.soins_planifies.some(x=>x.type==='Observation' && x.date===obs.dateCtrl))
+      a.soins_planifies.push({type:'Observation', date:obs.dateCtrl, notes:'Contrôle : '+(obs.probleme||'observation sanitaire')});
+    const next = a.soins_planifies.slice().sort((x,y)=>x.date.localeCompare(y.date))[0];
+    a.prochain_soin = next?.date||''; a.type_soin = next?.type||'';
+  }
+  closeModal();
+  if(state.selectedDetailId===id && document.getElementById('detail-overlay')?.style.display!=='none') openDetail(id);
+  render(); autoSave();
+}
+function supprimerObservation(arbreId, idx){
+  const a = db.arbres.find(x=>x.id===arbreId);
+  if(!a || !(a.sante_obs||[])[idx]) return;
+  if(!confirm('Supprimer cette observation sanitaire ?')) return;
+  a.sante_obs.splice(idx,1);
+  closeModal(); openDetail(arbreId); render(); autoSave();
 }
 
 function deleteArbre(id){
@@ -4544,21 +4626,24 @@ async function confirmImport(){
         if(btn) btn.textContent=`⏳ ${i+1}/${toImport.length} — compression…`;
         compressed.push(await compresserPhotosArbre(toImport[i]));
       }
-      _doImport(compressed);
+      await _doImport(compressed);
       if(btn){btn.textContent='✓ Importer';btn.disabled=false;}
     })();
     return;
   }
-  _doImport(toImport);
+  await _doImport(toImport);
 }
 
-function _doImport(toImport){
+async function _doImport(toImport){
   let added=0;
+  const aEnregistrer = [];   // photos à écrire dans le stockage de l'appareil
   let importCounter = db.arbres.length + 1;
   toImport.forEach(r=>{
     const nomBase=(r.nom||'').trim();
     const nomKey=nomBase.toLowerCase();
-    if(db.arbres.find(a=>a.nom.trim().toLowerCase()===nomKey)) return;
+    // Doublon : même nom (en ignorant le préfixe « 0NN — » ajouté à l'import)
+    const sansPrefixe = n => (n||'').trim().replace(/^\d{3}\s+—\s+/,'').toLowerCase();
+    if(db.arbres.find(a=>a.nom.trim().toLowerCase()===nomKey || sansPrefixe(a.nom)===nomKey)) return;
     const nomNum = String(importCounter).padStart(3,'0') + ' — ' + (nomBase || 'Arbre');
     const newId = _prochainId(db.arbres,'nextId');
     const travaux = (r.travaux||[]).map(t=>{
@@ -4620,14 +4705,24 @@ function _doImport(toImport){
       prochain_soin: r.prochain_soin||'',
       notes: r.notes||'',
       travaux,
-      photos: r.photos||[],
+      photos: (r.photos||[]).map((p,i)=>({...p, id: p.id || ('p'+Date.now().toString(36)+'_'+i+Math.random().toString(36).slice(2,5))})),
       sante_obs: r.sante_obs||[],
       valuations: r.valuations||[]
     });
+    db.arbres[db.arbres.length-1].photos.forEach(p=>{ if(p.dataUrl) aEnregistrer.push([newId, p.id, p.dataUrl]); });
     added++;
     importCounter++;
   });
+  // Les photos importées doivent être écrites dans le stockage photo de l'appareil,
+  // sinon elles disparaissent au prochain démarrage (photos « fantômes »)
+  let ko = 0;
+  for(let i=0;i<aEnregistrer.length;i++){
+    const [aid, pid, url] = aEnregistrer[i];
+    if(i%10===0) afficherIndicateur(`⏳ Enregistrement des photos importées ${i}/${aEnregistrer.length}…`);
+    try{ await idbSauverPhoto(aid, pid, url); }catch(e){ ko++; console.warn('Photo importée non enregistrée', e); }
+  }
   closeModal(); render(); autoSave();
+  if(ko) alert(`⚠️ ${ko} photo(s) importée(s) n'ont pas pu être enregistrées sur cet appareil (stockage plein ?).`);
   const skipped = toImport.length - added;
   const nbRemps = toImport.reduce((s,r)=>(s+(r.travaux||[]).filter(t=>t.type==='Rempotage').length),0);
   alert(`✅ ${added} arbre${added>1?'s':''} importé${added>1?'s':''}${nbRemps?` · ${nbRemps} rempotage${nbRemps>1?'s':''} liés à l'Atelier`:''}${skipped>0?`\n(${skipped} ignoré${skipped>1?'s':''} — nom déjà existant)`:''}.`);
@@ -4678,17 +4773,9 @@ function majCoutTravail(){
 }
 
 function getTailleCategorie(a){
-  if(!a) return null;
-  const h = a.hauteur || 0;
-  if(h === 0) return null;
-  if(h <= 7.5)  return 'Keishitsuo';
-  if(h <= 15)   return 'Shito';
-  if(h <= 20)   return 'Mame';
-  if(h <= 30)   return 'Shohin';
-  if(h <= 45)   return 'Komono';
-  if(h <= 75)   return 'Chūmono';
-  if(h <= 120)  return 'Dai & Omono';
-  return 'Hachi-uye';
+  // Même barème que l'affichage et les filtres (catégories de taille de la fiche)
+  if(!a || !(a.hauteur>0)) return null;
+  return getHauteurInfo(a.hauteur)?.nom || null;
 }
 
 function majChampsOrigine(origine){
@@ -4959,11 +5046,12 @@ function renderDepenses(c){
 
   // Engrais
   const engraisFiltre = (db.engrais||[]).filter(e=>!e.date_achat||(e.date_achat>=dateFrom&&e.date_achat<=dateTo));
-  const totalEngrais = engraisFiltre.reduce((s,e)=>s+(e.prix||0),0);
+  const _depense = x => x.prix ? x.prix : (x.prix_unite||0)*Math.max(1, x.nb_unites||0);  // prix unitaire × quantité (au moins 1)
+  const totalEngrais = engraisFiltre.reduce((s,e)=>s+_depense(e),0);
 
   // Produits phytosanitaires
   const produitsFiltre = (db.produits||[]).filter(p=>!p.date_achat||(p.date_achat>=dateFrom&&p.date_achat<=dateTo));
-  const totalProduits = produitsFiltre.reduce((s,p)=>s+(p.prix||0),0);
+  const totalProduits = produitsFiltre.reduce((s,p)=>s+_depense(p),0);
 
   // Total général
   const grandTotal = totalPots + totalSubstrats + totalEngrais + totalProduits;
@@ -5009,7 +5097,7 @@ function renderDepenses(c){
   </div>
 
   <div style="margin-top:20px;font-size:12px;color:var(--stone);padding:10px;background:#f8f8f6;border-radius:8px">
-    ℹ️ Les substrats sont affichés en valeur totale du stock acheté (sans filtre de date). Pour les engrais et produits, la date d'achat doit être renseignée dans la fiche pour être filtrée.
+    ℹ️ Les substrats sont affichés en valeur totale du stock acheté (sans filtre de date). Engrais et produits : prix par unité × quantité en stock (au moins une unité) ; la date d'achat doit être renseignée dans la fiche pour être filtrée.
   </div>`;
 
   c.innerHTML = existing + html;
@@ -6345,17 +6433,9 @@ function sauvegarderRempotage(id){
     cout_total:0
   };
 
-  // Déduire du stock
-  if(!id && melId && litres){
-    const mel=db.melanges.find(x=>x.id===melId);
-    if(mel){
-      mel.litres_total=Math.max(0,(mel.litres_total||0)-litres);
-      mel.composants.forEach(comp=>{
-        const s=db.substrats.find(x=>x.id===comp.sub_id);
-        if(s) s.litres_restants=Math.max(0,(s.litres_restants||0)-(litres*comp.pct/100));
-      });
-    }
-  }
+  // Stock : en modification on rend l'ancienne quantité avant de déduire la nouvelle
+  if(id){ const ancien=db.rempotages.find(x=>x.id===id); if(ancien) _stockMelange(ancien.melange_id, ancien.litres_utilises, +1); }
+  _stockMelange(melId, litres, -1);
   // Mettre à jour le pot
   if(potId){
     const pot=db.pots.find(p=>p.id===potId);
@@ -6380,7 +6460,8 @@ function sauvegarderRempotage(id){
 
     // Chercher un travail existant lié à ce rempotage
     const existingIdx = arbre.travaux.findIndex(t=>t.remp_id===rempId);
-    const travail = { date, type:'Rempotage', desc, cout:0, photosLinked:[], remp_id:rempId };
+    const prec = existingIdx>=0 ? arbre.travaux[existingIdx] : null;
+    const travail = { date, type:'Rempotage', desc, cout:prec?.cout||0, photosLinked:(arbre.photos||[]).filter(p=>p.date===date).map(p=>p.id), remp_id:rempId };
     if(existingIdx>=0){ arbre.travaux[existingIdx]=travail; }
     else { arbre.travaux.unshift(travail); }
 
@@ -6392,8 +6473,13 @@ function sauvegarderRempotage(id){
 }
 
 function supprimerRempotage(id){
-  if(!confirm('Supprimer ce rempotage ?'))return;
+  if(!confirm('Supprimer ce rempotage ?\n\nLe substrat utilisé est rendu au stock et le pot redevient disponible s\'il n\'est plus en place sur un arbre.'))return;
+  const r = db.rempotages.find(x=>x.id===id);
   db.rempotages=db.rempotages.filter(x=>x.id!==id);
+  if(r){
+    _stockMelange(r.melange_id, r.litres_utilises, +1);
+    if(r.pot_id && !potsEnUsage()[r.pot_id]){ const pot=db.pots.find(p=>p.id===r.pot_id); if(pot && pot.statut==='utilisé'){ pot.statut='libre'; pot.arbre_id=null; } }
+  }
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
 }
 
@@ -8529,12 +8615,29 @@ function afficherIndicateur(msg){
   ind.style.color = msg.startsWith('❌') ? '#ff6b6b'
     : msg.startsWith('✅')||msg.startsWith('✓')||msg.startsWith('💾') ? '#a8d5a2'
     : 'rgba(247,244,238,.8)';
+  // Sur téléphone la zone de messages est masquée : petit message flottant à la place
+  // (sauf progressions ⏳ et simples confirmations d'enregistrement « ✓ 14:32 · 3 MB »)
+  if(window.innerWidth<=700 && msg && !msg.startsWith('⏳') && !/^✓ \d/.test(msg) && msg!=='✅ Synchronisé' && !/pensez à sauvegarder/.test(msg)) _toast(msg);
+}
+function _toast(msg){
+  let t = document.getElementById('yb-toast');
+  if(!t){
+    t = document.createElement('div'); t.id = 'yb-toast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:86px;transform:translateX(-50%);max-width:88vw;z-index:400;background:rgba(26,26,24,.92);color:#fff;font-size:13px;line-height:1.35;padding:9px 14px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.3);text-align:center;transition:opacity .3s;pointer-events:none';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  t.style.background = msg.startsWith('❌') ? 'rgba(139,46,30,.95)' : msg.startsWith('⚠️') ? 'rgba(138,90,20,.95)' : 'rgba(26,26,24,.92)';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>{ t.style.opacity='0'; }, msg.startsWith('❌')||msg.startsWith('⚠️') ? 6000 : 3500);
 }
 
 // Sauvegarde automatique après chaque modification
 // ── Versions dans IndexedDB ──────────────────────────────────────────────────
 const IDB_VERSIONS_STORE = 'versions';
-const MAX_VERSIONS_IDB = 5;
+const MAX_VERSIONS_IDB = 5;     // les 5 plus récentes…
+const VERSIONS_JOURS = 30;      // …et une par jour sur 30 jours
 
 async function idbSauvegarderVersion(payload, nbArbres){
   return new Promise((resolve, reject)=>{
@@ -8549,13 +8652,32 @@ async function idbSauvegarderVersion(payload, nbArbres){
       const tx = db2.transaction(IDB_VERSIONS_STORE, 'readwrite');
       const store = tx.objectStore(IDB_VERSIONS_STORE);
       // Ajouter la nouvelle version
-      store.add({savedAt:new Date().toISOString(), nbArbres, data:payload});
-      // Lire toutes les clés pour supprimer les plus vieilles
-      const allKeys = store.getAllKeys();
-      allKeys.onsuccess = ev=>{
-        const keys = ev.target.result.sort((a,b)=>a-b);
-        while(keys.length > MAX_VERSIONS_IDB){
-          store.delete(keys.shift());
+      const savedAt = new Date().toISOString();
+      const addReq = store.add({savedAt, nbArbres, data:payload});
+      // Conservation : les 5 plus récentes + la dernière de chaque jour sur 30 jours.
+      // Un petit index (id → date) évite de relire toutes les versions à chaque sauvegarde.
+      const appliquer = idx=>{
+        const ids = Object.keys(idx).map(Number).sort((a,b)=>b-a);
+        const garder = new Set(ids.slice(0, MAX_VERSIONS_IDB));
+        const limite = Date.now() - VERSIONS_JOURS*86400000;
+        const jours = new Set();
+        ids.forEach(id=>{
+          const t = Date.parse(idx[id]); if(!(t>=limite)) return;
+          const j = idx[id].slice(0,10);
+          if(!jours.has(j)){ jours.add(j); garder.add(id); }
+        });
+        ids.forEach(id=>{ if(!garder.has(id)){ store.delete(id); delete idx[id]; } });
+        try{ localStorage.setItem('yb_versions_idx', JSON.stringify(idx)); }catch(_){}
+      };
+      addReq.onsuccess = ev=>{
+        const newId = ev.target.result;
+        let idx = null;
+        try{ idx = JSON.parse(localStorage.getItem('yb_versions_idx')||'null'); }catch(_){ idx = null; }
+        if(idx && typeof idx==='object'){ idx[newId] = savedAt; appliquer(idx); }
+        else {
+          // Première fois : construire l'index à partir des versions existantes
+          const all = store.getAll();
+          all.onsuccess = e2=>{ const i2 = {}; (e2.target.result||[]).forEach(v=>{ i2[v.id] = v.savedAt; }); appliquer(i2); };
         }
       };
       tx.oncomplete = ()=>resolve();
@@ -8626,12 +8748,13 @@ function ouvrirVersions(){
     if(!body) return;
     const toutes = versions.length ? versions : lsVersions;
     if(!toutes.length){
-      body.innerHTML = '<div style="color:var(--stone);text-align:center;padding:20px">Aucune sauvegarde automatique disponible.<br><br>Une version est enregistrée à chaque sauvegarde locale ; seules les 5 dernières sont conservées.</div>';
+      body.innerHTML = '<div style="color:var(--stone);text-align:center;padding:20px">Aucune sauvegarde automatique disponible.<br><br>Une version est enregistrée à chaque modification ; l\'app garde les 5 plus récentes et une par jour sur 30 jours.</div>';
       return;
     }
     window._versionsListe = toutes;
-    body.innerHTML = `<p style="font-size:13px;color:var(--stone);margin-bottom:12px">Les ${toutes.length} dernières sauvegardes automatiques (stockées localement dans IndexedDB).</p>
-    ${toutes.map((v,i)=>`
+    const jourPrec = (v,i)=> i>0 && toutes[i-1].savedAt.slice(0,10)===v.savedAt.slice(0,10);
+    body.innerHTML = `<p style="font-size:13px;color:var(--stone);margin-bottom:12px">${toutes.length} sauvegardes sur cet appareil : les 5 plus récentes, puis une par jour sur 30 jours. Restaurer remplace la collection actuelle (photos et documents restent).</p>
+    ${toutes.map((v,i)=>`${(i===MAX_VERSIONS_IDB) ? '<div style="font-size:11px;font-weight:600;color:var(--stone);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 6px">Une par jour</div>' : ''}
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${i===0?'var(--moss-light)':'#f8f8f6'};border-radius:8px;margin-bottom:8px">
       <div>
         <div style="font-weight:600;font-size:13px">${i===0?'⭐ Plus récente — ':''}${new Date(v.savedAt).toLocaleString('fr-CH')}</div>
@@ -9141,7 +9264,8 @@ function masseAjouterTravail(){
   const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
   if(!arbres.length) return;
   const today = new Date().toISOString().split('T')[0];
-  const TYPES_TRAVAUX = ['Rempotage','Taille','Déligature','Ligature','Traitement phytosanitaire','Fertilisation','Arrosage','Autre'];
+  // Mêmes types que partout ailleurs (Atelier › Types de travaux)
+  const TYPES_TRAVAUX = getTravaux();
   const m = document.getElementById('modal');
   const ov = document.getElementById('modal-overlay');
   m.innerHTML = `
@@ -9150,7 +9274,7 @@ function masseAjouterTravail(){
       <div style="font-size:13px;color:var(--stone);margin-bottom:12px">${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
         <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Type de travail</label>
-          <select id="mt-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TYPES_TRAVAUX.map(t=>`<option>${t}</option>`).join('')}</select></div>
+          <select id="mt-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TYPES_TRAVAUX.map(t=>`<option value="${esc(t.nom)}">${t.emoji||t.icon||''} ${esc(t.nom)}${t.freq?` (tous les ${t.freq} j)`:''}</option>`).join('')}</select></div>
         <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Date prévue</label>
           <input id="mt-date" type="date" value="${today}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
         <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Notes</label>
@@ -10525,6 +10649,311 @@ function ouvrirSyncModal(){
   </div>
   <div class="modal-body">${corps}</div>`;
   document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+// ══ NOUVEAUTÉS : calendrier des soins, comparaison avant/après, export Excel, export ZIP ══
+
+// ── 📅 CALENDRIER DES SOINS ──────────────────────────────────────────────────
+let _cal = {an:null, mois:null};
+function ouvrirCalendrier(an, mois){
+  const now = new Date();
+  _cal.an = an ?? _cal.an ?? now.getFullYear();
+  _cal.mois = mois ?? _cal.mois ?? now.getMonth();
+  const d0 = new Date(_cal.an, _cal.mois, 1);
+  const nomMois = d0.toLocaleDateString('fr-CH', {month:'long', year:'numeric'});
+  const pad = n=>String(n).padStart(2,'0');
+  const cle = d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const today = cle(now);
+  // Soins planifiés et travaux faits, indexés par jour
+  const parJour = {};
+  const ajout = (j, x)=>{ (parJour[j] = parJour[j] || []).push(x); };
+  db.arbres.forEach(a=>{
+    getSoinsPlanifies(a).forEach(s=>{ if(s.date) ajout(s.date, {a, type:s.type, prevu:true, date:s.date}); });
+    (a.travaux||[]).forEach(t=>{ if(t.date) ajout(t.date, {a, type:t.type, prevu:false, date:t.date}); });
+  });
+  const premier = (d0.getDay()+6)%7;           // lundi = 0
+  const nbJours = new Date(_cal.an, _cal.mois+1, 0).getDate();
+  const cases = [];
+  for(let i=0;i<premier;i++) cases.push(null);
+  for(let j=1;j<=nbJours;j++) cases.push(new Date(_cal.an, _cal.mois, j));
+  while(cases.length%7) cases.push(null);
+  const nbPrevus = Object.entries(parJour).filter(([k])=>k.startsWith(`${_cal.an}-${pad(_cal.mois+1)}`)).reduce((s,[,l])=>s+l.filter(x=>x.prevu).length,0);
+  const enRetard = [];
+  db.arbres.forEach(a=>getSoinsPlanifies(a).forEach(s=>{ if(s.date && s.date<today) enRetard.push({a,s}); }));
+  const m = document.getElementById('modal');
+  m.innerHTML = `<div class="modal-head">
+    <div class="modal-title">📅 Calendrier des soins</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+      <button class="btn" onclick="ouvrirCalendrier(${_cal.mois===0?_cal.an-1:_cal.an}, ${(_cal.mois+11)%12})">‹</button>
+      <div style="text-align:center"><div style="font-family:var(--serif,serif);font-size:18px;text-transform:capitalize">${nomMois}</div>
+        <div style="font-size:11.5px;color:var(--stone)">${nbPrevus} soin${nbPrevus>1?'s':''} prévu${nbPrevus>1?'s':''} ce mois · <a href="#" onclick="event.preventDefault();_cal.an=null;_cal.mois=null;ouvrirCalendrier()">aujourd'hui</a></div></div>
+      <button class="btn" onclick="ouvrirCalendrier(${_cal.mois===11?_cal.an+1:_cal.an}, ${(_cal.mois+1)%12})">›</button>
+    </div>
+    ${enRetard.length?`<div style="background:var(--rust-light);color:var(--rust);border-radius:8px;padding:6px 10px;font-size:12px;margin-bottom:8px">⚠️ ${enRetard.length} soin${enRetard.length>1?'s':''} planifié${enRetard.length>1?'s':''} en retard (date passée, non validé${enRetard.length>1?'s':''})</div>`:''}
+    <div class="cal-grid">
+      ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(j=>`<div class="cal-head">${j}</div>`).join('')}
+      ${cases.map(d=>{
+        if(!d) return '<div class="cal-case vide"></div>';
+        const k = cle(d), liste = parJour[k]||[];
+        const prevus = liste.filter(x=>x.prevu), faits = liste.filter(x=>!x.prevu);
+        const retard = k<today && prevus.length;
+        return `<div class="cal-case ${k===today?'auj':''} ${retard?'retard':''}" onclick="calendrierJour('${k}')">
+          <div class="cal-num">${d.getDate()}</div>
+          ${prevus.slice(0,3).map(x=>`<div class="cal-it" title="${esc(x.a.nom)} — ${esc(x.type)}">${icoTravail(x.type,14)} <span>${esc(x.a.nom)}</span></div>`).join('')}
+          ${prevus.length>3?`<div class="cal-plus">+${prevus.length-3}</div>`:''}
+          ${faits.length?`<div class="cal-fait">✓ ${faits.length} fait${faits.length>1?'s':''}</div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div id="cal-jour" style="margin-top:12px"></div>
+  </div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+  window._calParJour = parJour;
+}
+function calendrierJour(k){
+  const liste = (window._calParJour||{})[k]||[];
+  const el = document.getElementById('cal-jour'); if(!el) return;
+  const prevus = liste.filter(x=>x.prevu), faits = liste.filter(x=>!x.prevu);
+  el.innerHTML = `<div style="font-weight:600;margin-bottom:6px">${fmtDate(k)}</div>
+    ${!liste.length?'<div style="font-size:12.5px;color:var(--stone)">Rien ce jour-là.</div>':''}
+    ${prevus.map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:5px">
+      ${icoTravail(x.type,18)}<div style="flex:1;min-width:0"><b style="cursor:pointer" onclick="closeModal();openDetail(${x.a.id})">${esc(x.a.nom)}</b><div style="font-size:11.5px;color:var(--stone)">${esc(x.type)} · prévu</div></div>
+      <button class="btn btn-primary" style="font-size:12px;padding:3px 10px" onclick="validerSoin(${x.a.id}, '${x.type.replace(/'/g,"\\'")}', '${x.date}')">✓ Valider</button></div>`).join('')}
+    ${faits.map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--moss-light);border-radius:8px;margin-bottom:5px;cursor:pointer" onclick="closeModal();openDetail(${x.a.id})">
+      ${icoTravail(x.type,18)}<div style="flex:1"><b>${esc(x.a.nom)}</b><div style="font-size:11.5px;color:var(--stone)">${esc(x.type)} · fait ✓</div></div></div>`).join('')}`;
+  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+// ── ⇆ COMPARAISON AVANT / APRÈS ──────────────────────────────────────────────
+function ouvrirComparaison(arbreId){
+  const a = db.arbres.find(x=>x.id===arbreId); if(!a) return;
+  const ph = (a.photos||[]).filter(p=>p.dataUrl).slice().sort((x,y)=>(x.date||'').localeCompare(y.date||''));
+  if(ph.length<2){ alert('Il faut au moins deux photos de cet arbre pour comparer.'); return; }
+  window._cmpPhotos = ph;
+  const opt = sel => ph.map((p,i)=>`<option value="${i}" ${i===sel?'selected':''}>${fmtDate(p.date)||'Sans date'}${p.type?' · '+esc(p.type):''}</option>`).join('');
+  const m = document.getElementById('modal');
+  m.innerHTML = `<div class="modal-head">
+    <div class="modal-title">⇆ Avant / après — ${esc(a.nom)}</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-row">
+      <div class="fg"><label>Avant (gauche)</label><select id="cmp-a" onchange="_cmpMaj()">${opt(0)}</select></div>
+      <div class="fg"><label>Après (droite)</label><select id="cmp-b" onchange="_cmpMaj()">${opt(ph.length-1)}</select></div>
+    </div>
+    <div id="cmp-zone" style="position:relative;width:100%;max-width:640px;margin:6px auto 0;aspect-ratio:1/1;background:#111;border-radius:10px;overflow:hidden;touch-action:none;user-select:none">
+      <img id="cmp-img-b" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain" alt="">
+      <div id="cmp-clip" style="position:absolute;inset:0;overflow:hidden;clip-path:inset(0 50% 0 0)"><img id="cmp-img-a" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain" alt=""></div>
+      <div id="cmp-ligne" style="position:absolute;top:0;bottom:0;left:50%;width:3px;margin-left:-1.5px;background:#fff;box-shadow:0 0 6px rgba(0,0,0,.6);pointer-events:none"></div>
+      <div id="cmp-poignee" style="position:absolute;top:50%;left:50%;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:16px;pointer-events:none">⇆</div>
+      <div id="cmp-lib-a" style="position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11.5px;padding:2px 8px;border-radius:6px"></div>
+      <div id="cmp-lib-b" style="position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11.5px;padding:2px 8px;border-radius:6px"></div>
+    </div>
+    <input id="cmp-range" type="range" min="0" max="100" value="50" style="width:100%;max-width:640px;display:block;margin:10px auto 0" oninput="_cmpPos(this.value)">
+    <div style="text-align:center;font-size:11.5px;color:var(--stone)">Glissez sur l'image ou le curseur pour passer de l'une à l'autre.</div>
+  </div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+  const zone = document.getElementById('cmp-zone');
+  const bouger = e=>{ const r = zone.getBoundingClientRect(); const x = (e.touches?e.touches[0].clientX:e.clientX) - r.left; _cmpPos(Math.max(0,Math.min(100, x/r.width*100))); };
+  let actif = false;
+  zone.addEventListener('pointerdown', e=>{ actif = true; zone.setPointerCapture?.(e.pointerId); bouger(e); });
+  zone.addEventListener('pointermove', e=>{ if(actif) bouger(e); });
+  zone.addEventListener('pointerup', ()=>{ actif = false; });
+  _cmpMaj();
+}
+function _cmpMaj(){
+  const ph = window._cmpPhotos||[];
+  const a = ph[+document.getElementById('cmp-a').value], b = ph[+document.getElementById('cmp-b').value];
+  if(!a||!b) return;
+  document.getElementById('cmp-img-a').src = a.dataUrl;
+  document.getElementById('cmp-img-b').src = b.dataUrl;
+  document.getElementById('cmp-lib-a').textContent = fmtDate(a.date)||'Avant';
+  document.getElementById('cmp-lib-b').textContent = fmtDate(b.date)||'Après';
+}
+function _cmpPos(v){
+  v = +v;
+  const c = document.getElementById('cmp-clip'); if(!c) return;
+  c.style.clipPath = `inset(0 ${100-v}% 0 0)`;
+  document.getElementById('cmp-ligne').style.left = v+'%';
+  document.getElementById('cmp-poignee').style.left = v+'%';
+  const r = document.getElementById('cmp-range'); if(r && +r.value!==Math.round(v)) r.value = Math.round(v);
+}
+
+// ── 📊 EXPORT EXCEL ──────────────────────────────────────────────────────────
+let _xlsxLib = null;
+async function _chargerXLSX(){
+  if(_xlsxLib) return _xlsxLib;
+  if(window.XLSX) return (_xlsxLib = window.XLSX);
+  for(const src of ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js']){
+    try{
+      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+      if(window.XLSX) return (_xlsxLib = window.XLSX);
+    }catch(_){}
+  }
+  throw new Error('La bibliothèque Excel n\'a pas pu être chargée (connexion Internet nécessaire).');
+}
+function _feuillesExport(){
+  const potDe = id => { const r = (db.rempotages||[]).filter(x=>x.arbre_id===id).sort((x,y)=>(y.date||'').localeCompare(x.date||''))[0]; return r ? (db.pots.find(p=>p.id===r.pot_id)?.nom || r.pot_nom || '') : ''; };
+  const arbres = db.arbres.map(a=>{
+    const hi = getHauteurInfo(a.hauteur);
+    const prochain = getSoinsPlanifies(a).slice().sort((x,y)=>(x.date||'').localeCompare(y.date||''))[0];
+    return {
+      'N°': a.num||'', 'Nom': a.nom||'', 'Espèce': a.espece||'', 'Nom latin': getLatin(a.espece, a)||'', 'Cultivar': a.cultivar||'',
+      'Style': a.style||'', 'Stade': a.stade||'', 'Origine': a.origine||'', "Date d'acquisition": a.date_acq||'',
+      'Valeur d\'acquisition (CHF)': calculCoutArbre(a).prixAchat||0,
+      'Pépinière / fournisseur': a.pepiniere||'', 'Hauteur (cm)': +a.hauteur||'', 'Catégorie de taille': hi?hi.nom:'',
+      'Ø tronc (cm)': +a.diam_tronc||'', 'Ø houppier (cm)': +a.diam_houppier||'', 'Ø nébari (cm)': +a.diam_nebari||'',
+      'Emplacement': a.localisation||'', 'Santé (%)': a.sante??'', 'Fiche remplie (%)': completudeArbre(a).pct,
+      'Coût total investi (CHF)': Math.round((calculCoutArbre(a)?.total||0)*100)/100,
+      'Pot actuel': potDe(a.id), 'Prochain soin': prochain?`${prochain.type} — ${prochain.date}`:'',
+      'Photos': (a.photos||[]).length, 'Documents': (a.documents||[]).length, 'Travaux': (a.travaux||[]).length,
+      'Altitude': a.alt||'', 'GPS': a.gps||'', 'Notes': a.notes||''
+    };
+  });
+  const travaux = [];
+  db.arbres.forEach(a=>(a.travaux||[]).forEach(t=>travaux.push({'Date':t.date||'', 'N°':a.num||'', 'Arbre':a.nom||'', 'Type':t.type||'', 'Description':t.desc||'', 'Coût (CHF)':+t.cout||0})));
+  travaux.sort((x,y)=>y.Date.localeCompare(x.Date));
+  const soins = [];
+  db.arbres.forEach(a=>getSoinsPlanifies(a).forEach(s=>soins.push({'Date prévue':s.date||'', 'N°':a.num||'', 'Arbre':a.nom||'', 'Type':s.type||'', 'Notes':s.notes||''})));
+  soins.sort((x,y)=>x['Date prévue'].localeCompare(y['Date prévue']));
+  const pots = (db.pots||[]).map(p=>({'Nom':p.nom||'', 'Type':(TYPES_SUPPORT.find(t=>t.k===(p.type_support||'pot'))||{}).lib||'', 'Forme':p.forme||'', 'Matière':p.matiere||'',
+    'Statut':p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':'En service',
+    'Longueur':+p.long||'', 'Largeur':+p.larg||'', 'Hauteur':+p.haut||'', 'Poids (kg)':+p.poids||'', 'Prix (CHF)':+p.prix||0,
+    "Date d'achat":p.date_acq||'', 'Fabricant / fournisseur':p.fournisseur||'', 'Provenance':p.provenance||'', 'Collection':p.collection||'', 'Notes':p.notes||''}));
+  const remp = (db.rempotages||[]).map(r=>{ const a=db.arbres.find(x=>x.id===r.arbre_id); const mel=db.melanges.find(x=>x.id===r.melange_id);
+    return {'Date':r.date||'', 'Arbre':a?a.nom:'(supprimé)', 'Pot':db.pots.find(p=>p.id===r.pot_id)?.nom||r.pot_nom||'', 'Mélange':mel?mel.nom:(r.substrat||''), 'Litres':+r.litres_utilises||'', 'Notes':r.notes||''}; })
+    .sort((x,y)=>y.Date.localeCompare(x.Date));
+  const sante = [];
+  db.arbres.forEach(a=>(a.sante_obs||[]).forEach(o=>sante.push({'Date':o.date||'', 'Arbre':a.nom||'', 'Problème':o.probleme||'', 'Diagnostic':o.diagnostic||'', 'Traitement':o.traitement||'', 'Résultat':o.resultat||'', 'Contrôle prévu':o.dateCtrl||''})));
+  const stocks = [
+    ...(db.substrats||[]).map(x=>({'Catégorie':'Substrat','Nom':x.nom,'Marque':x.marque||'','Stock':(Math.round((x.litres_restants||0)*10)/10)+' L','Prix':x.sac_litres?Math.round(x.sac_prix/x.sac_litres*100)/100+' CHF/L':''})),
+    ...(db.melanges||[]).map(x=>({'Catégorie':'Mélange','Nom':x.nom,'Marque':'','Stock':(x.litres_total||0)+' L','Prix':''})),
+    ...(db.engrais||[]).map(x=>({'Catégorie':'Engrais','Nom':x.nom,'Marque':x.marque||'','Stock':(x.nb_unites||0)+' '+(x.unite||''),'Prix':(x.prix_unite||0)+' CHF / '+(x.unite||'unité')})),
+    ...(db.produits||[]).map(x=>({'Catégorie':'Traitement','Nom':x.nom,'Marque':x.marque||'','Stock':(x.nb_unites||0)+' '+(x.unite||''),'Prix':(x.prix_unite||0)+' CHF / '+(x.unite||'unité')})),
+  ];
+  return [['Arbres',arbres],['Travaux',travaux],['Soins planifiés',soins],['Rempotages',remp],['Pots',pots],['Santé',sante],['Stocks',stocks]];
+}
+async function exporterExcel(){
+  try{
+    afficherIndicateur('⏳ Préparation du fichier Excel…');
+    const X = await _chargerXLSX();
+    const wb = X.utils.book_new();
+    _feuillesExport().forEach(([nom, lignes])=>{
+      const ws = X.utils.json_to_sheet(lignes.length ? lignes : [{'(vide)':''}]);
+      const cols = Object.keys(lignes[0]||{'(vide)':''});
+      ws['!cols'] = cols.map(c=>({wch: Math.min(48, Math.max(c.length+2, ...lignes.slice(0,200).map(l=>String(l[c]??'').length+1)))}));
+      ws['!autofilter'] = {ref: ws['!ref']};
+      X.utils.book_append_sheet(wb, ws, nom);
+    });
+    const out = X.write(wb, {bookType:'xlsx', type:'array'});
+    _telechargerBlob(new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), `Yugen_Bonsai_${_dateStr ? _dateStr() : new Date().toISOString().slice(0,10)}.xlsx`);
+    afficherIndicateur(`✅ Export Excel : ${db.arbres.length} arbres`);
+  }catch(e){
+    alert('❌ Export Excel impossible : '+(e.message||e));
+    afficherIndicateur('');
+  }
+}
+
+// ── 📦 EXPORT COMPLET (ZIP) ───────────────────────────────────────────────────
+function _nomFichier(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w\-. ]+/g,'_').replace(/\s+/g,'_').replace(/_+/g,'_').slice(0,60) || 'sans_nom'; }
+function ouvrirExportZip(){
+  const nbPh = db.arbres.reduce((s,a)=>s+(a.photos||[]).length,0) + (db.pots||[]).reduce((s,p)=>s+(p.photos||[]).length,0);
+  const nbDoc = db.arbres.reduce((s,a)=>s+(a.documents||[]).length,0);
+  const m = document.getElementById('modal');
+  m.innerHTML = `<div class="modal-head">
+    <div class="modal-title">📦 Export complet (ZIP)</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <p style="font-size:13px;margin-bottom:10px">Une copie complète de votre collection à ranger sur un disque ou un cloud, lisible sans l'application :</p>
+    <ul style="font-size:12.5px;margin:0 0 10px 18px;line-height:1.6">
+      <li><b>collection.json</b> — toutes les données (rechargeable avec 📂 Charger un fichier) ;</li>
+      <li><b>Yugen_Bonsai.xlsx</b> — le tableau Excel (si Internet est disponible) ;</li>
+      <li><b>photos/</b> — ${nbPh} photo${nbPh>1?'s':''}, un dossier par arbre (date en tête de nom) ;</li>
+      <li><b>documents/</b> — ${nbDoc} document${nbDoc>1?'s':''} (factures, autorisations…).</li>
+    </ul>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:6px"><input type="checkbox" id="zip-photos" checked> Inclure les photos</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="zip-docs" checked> Inclure les documents</label>
+    <p class="small" style="font-size:11.5px;color:var(--stone)">Les grandes collections sont découpées en plusieurs fichiers ZIP d'environ 200 Mo. Seuls les fichiers présents sur cet appareil sont inclus. Sur iPhone, préférez l'ordinateur pour un export avec toutes les photos.</p>
+    <div id="zip-prog" style="font-size:12.5px;color:var(--moss);min-height:18px;margin-top:6px"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" id="zip-btn" onclick="exporterZip()">📦 Créer l'export</button>
+  </div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+}
+function _dataUrlVersOctets(u){
+  const i = u.indexOf(','); const b = atob(u.slice(i+1));
+  const out = new Uint8Array(b.length); for(let k=0;k<b.length;k++) out[k] = b.charCodeAt(k);
+  return out;
+}
+async function exporterZip(){
+  const btn = document.getElementById('zip-btn'), prog = document.getElementById('zip-prog');
+  const avecPh = document.getElementById('zip-photos')?.checked, avecDoc = document.getElementById('zip-docs')?.checked;
+  const P = t=>{ if(prog) prog.textContent = t; };
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Export en cours…'; }
+  try{
+    const JSZipLib = await loadJSZip();
+    const date = new Date().toISOString().slice(0,10);
+    const LIMITE = 200*1024*1024;
+    // Liste des médias à exporter
+    const items = [];
+    const dossierArbre = a => _nomFichier(`${a.num||a.id}_${a.nom}`);
+    if(avecPh){
+      db.arbres.forEach(a=>(a.photos||[]).forEach((p,i)=>items.push({kind:'ph', key:_photoKey(a.id,p.id), path:`photos/${dossierArbre(a)}/${p.date||'sans-date'}_${String(i+1).padStart(3,'0')}${p.type?'_'+_nomFichier(p.type):''}.jpg`})));
+      (db.pots||[]).forEach(pt=>(pt.photos||[]).forEach((p,i)=>items.push({kind:'ph', key:_photoKey('pot_'+pt.id,p.id), path:`photos/_pots/${_nomFichier(pt.id+'_'+pt.nom)}_${i+1}.jpg`})));
+    }
+    if(avecDoc){
+      db.arbres.forEach(a=>(a.documents||[]).forEach(d=>{
+        const ext = (d.fichier||'').match(/\.[a-z0-9]{1,5}$/i)?.[0] || (d.mime==='application/pdf'?'.pdf':'');
+        items.push({kind:'doc', key:_docKey(a.id,d.id), path:`documents/${dossierArbre(a)}/${d.date||''}_${_nomFichier(d.nom||d.fichier)}${ext}`});
+      }));
+    }
+    const dbp = await ouvrirIDB();
+    const lirePh = key => new Promise(res=>{ const q = dbp.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(key); q.onsuccess=()=>res(q.result&&q.result.dataUrl||null); q.onerror=()=>res(null); });
+    let zip = new JSZipLib(), taille = 0, partie = 1, absents = 0, ajoutes = 0;
+    const fichiers = [];
+    const entete = async z=>{
+      z.file('collection.json', JSON.stringify(_buildSyncPayloadRaw(), null, 1));
+      z.file('LISEZ-MOI.txt', `Yūgen Bonsaï — export du ${date}\n\ncollection.json : toutes les données (rechargeable dans l'app : 💾 Données › 📂 Charger un fichier).\nphotos/ : un dossier par arbre, nom = date de la photo.\ndocuments/ : factures, autorisations…\n`);
+      try{
+        const X = await _chargerXLSX(); const wb = X.utils.book_new();
+        _feuillesExport().forEach(([n,l])=>X.utils.book_append_sheet(wb, X.utils.json_to_sheet(l.length?l:[{'(vide)':''}]), n));
+        z.file('Yugen_Bonsai.xlsx', X.write(wb, {bookType:'xlsx', type:'array'}));
+      }catch(_){ /* sans Internet : pas de fichier Excel */ }
+    };
+    const finir = async (z, n, dernier)=>{
+      P(`⏳ Compression du fichier ${n}…`);
+      const blob = await z.generateAsync({type:'blob', compression:'STORE'});
+      const nom = (dernier && n===1) ? `Yugen_Bonsai_export_${date}.zip` : `Yugen_Bonsai_export_${date}_partie${n}.zip`;
+      _telechargerBlob(blob, nom); fichiers.push(nom);
+      await _attendre(1500);
+    };
+    await entete(zip);
+    for(let i=0;i<items.length;i++){
+      const it = items[i];
+      if(i%20===0){ P(`⏳ ${i}/${items.length} fichiers…`); await _attendre(0); }
+      let octets = null;
+      if(it.kind==='ph'){ const u = await lirePh(it.key); if(u) octets = _dataUrlVersOctets(u); }
+      else { const rec = await _docTx('readonly', s=>s.get(it.key)).catch(()=>null); if(rec && rec.buf) octets = new Uint8Array(rec.buf); }
+      if(!octets){ absents++; continue; }
+      if(taille + octets.length > LIMITE && taille>0){
+        await finir(zip, partie, false); partie++; zip = new JSZipLib(); taille = 0;
+        zip.file('LISEZ-MOI.txt', `Yūgen Bonsaï — export du ${date}, partie ${partie}. Les données sont dans collection.json (partie 1).\n`);
+      }
+      zip.file(it.path, octets); taille += octets.length; ajoutes++;
+    }
+    await finir(zip, partie, partie===1);
+    P(`✅ ${fichiers.length} fichier${fichiers.length>1?'s':''} ZIP téléchargé${fichiers.length>1?'s':''} · ${ajoutes} photo(s)/document(s)${absents?` · ${absents} absent(s) de cet appareil`:''}`);
+    afficherIndicateur(`✅ Export ZIP terminé (${fichiers.length} fichier${fichiers.length>1?'s':''})`);
+  }catch(e){
+    P('❌ '+(e.message||e));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '📦 Créer l\'export'; }
 }
 
 // Surveillance : une synchronisation sans aucune activité depuis 5 min est débloquée
