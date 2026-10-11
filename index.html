@@ -1418,10 +1418,14 @@ function ajouterReplanifRow(prefix, type, date){
   if(list) list.insertAdjacentHTML('beforeend', replanifRowHtml(prefix, type, date||''));
 }
 
+// Les ids d'arbres peuvent être nombre ou texte selon l'origine (saisie, sync, import) → toujours comparer en texte
+function _memeId(x,y){ return String(x)===String(y); }
+function _idJs(id){ return "'"+String(id).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'"; }
+
 function validerSoin(arbreId, soinType, soinDate, event){
   if(event) event.stopPropagation();
-  const a = db.arbres.find(x=>x.id===arbreId);
-  if(!a) return;
+  const a = db.arbres.find(x=>_memeId(x.id,arbreId));
+  if(!a){ alert('⚠️ Arbre introuvable pour ce soin (id '+arbreId+').'); return; }
   const today = new Date().toISOString().split('T')[0];
   const freqDefaut = getSoinFreq(soinType);
   const coutDefaut = getSoinCoutPourArbre(soinType, a);
@@ -1441,7 +1445,7 @@ function validerSoin(arbreId, soinType, soinDate, event){
     <input type="hidden" id="v-soin-date-orig" value="${soinDate}">
     <div class="form-row">
       <div class="fg"><label>Date d'exécution</label><input id="v-date" type="date" value="${today}"></div>
-      <div class="fg"><label>Type de soin réalisé</label><select id="v-type">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="fg"><label>Type de soin réalisé</label><select id="v-type">${(TRAVAUX_TYPES.includes(soinType)?TRAVAUX_TYPES:[soinType,...TRAVAUX_TYPES]).map(t=>`<option ${t===soinType?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
     </div>
     <div class="form-row one"><div class="fg"><label>Notes (facultatif)</label><input id="v-desc" placeholder="Ex: Biogold 1 pastille, bon état…"></div></div>
     <div class="form-row">
@@ -1462,14 +1466,18 @@ function validerSoin(arbreId, soinType, soinDate, event){
   </div>
   <div class="modal-footer">
     <button class="btn" onclick="closeModal()">Annuler</button>
-    <button class="btn btn-primary" onclick="confirmerValidationSoin(${arbreId})">✓ Valider</button>
+    <button class="btn btn-primary" onclick="confirmerValidationSoin(${esc(_idJs(a.id))})">✓ Valider</button>
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
 }
 
 function confirmerValidationSoin(arbreId){
-  const a = db.arbres.find(x=>x.id===arbreId);
-  if(!a) return;
+  try{ _confirmerValidationSoin(arbreId); }
+  catch(e){ console.error(e); alert('⚠️ Échec de la validation du soin : '+e.message); }
+}
+function _confirmerValidationSoin(arbreId){
+  const a = db.arbres.find(x=>_memeId(x.id,arbreId));
+  if(!a){ alert('⚠️ Arbre introuvable (id '+arbreId+').'); return; }
   const date      = document.getElementById('v-date').value;
   const type      = document.getElementById('v-type').value;
   const desc      = document.getElementById('v-desc').value;
@@ -1508,7 +1516,7 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
   const today = new Date().toISOString().split('T')[0];
   const freqDefaut = getSoinFreq(soinType);
   const prochainDefaut = freqDefaut ? new Date(Date.now() + freqDefaut*86400000).toISOString().split('T')[0] : '';
-  const arbres = arbreIds.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const arbres = arbreIds.map(id=>db.arbres.find(a=>_memeId(a.id,id))).filter(Boolean);
   const coutDefaut = arbres.length ? getSoinCoutPourArbre(soinType, arbres[0]) : 0;
 
   const m = document.getElementById('modal');
@@ -1529,7 +1537,7 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
     <input type="hidden" id="vm-arbre-ids" value="${arbreIds.join(',')}">
     <div class="form-row">
       <div class="fg"><label>Date d'exécution</label><input id="vm-date" type="date" value="${today}"></div>
-      <div class="fg"><label>Type de soin réalisé</label><select id="vm-type">${TRAVAUX_TYPES.map(t=>`<option ${t===soinType?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="fg"><label>Type de soin réalisé</label><select id="vm-type">${(TRAVAUX_TYPES.includes(soinType)?TRAVAUX_TYPES:[soinType,...TRAVAUX_TYPES]).map(t=>`<option ${t===soinType?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
     </div>
     <div class="form-row one"><div class="fg"><label>Notes (facultatif, appliquées à tous)</label><input id="vm-desc" placeholder="Ex: Biogold 1 pastille, bon état…"></div></div>
     <div class="form-row">
@@ -1556,13 +1564,17 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
 }
 
 function confirmerValidationEnMasse(){
+  try{ _confirmerValidationEnMasse(); }
+  catch(e){ console.error(e); alert('⚠️ Échec de la validation en masse : '+e.message); }
+}
+function _confirmerValidationEnMasse(){
   const date     = document.getElementById('vm-date').value;
   const type     = document.getElementById('vm-type').value;
   const desc     = document.getElementById('vm-desc').value;
   const cout     = parseFloat(document.getElementById('vm-cout')?.value)||0;
   const origType = document.getElementById('vm-soin-type').value;
   const origDate = document.getElementById('vm-soin-date').value;
-  const ids      = document.getElementById('vm-arbre-ids').value.split(',').map(Number);
+  const ids      = document.getElementById('vm-arbre-ids').value.split(',');
 
   const reprogrammations = [...document.querySelectorAll('#vm-replanif-list .repl-row')]
     .map(row=>({date:row.querySelector('.repl-date').value, type:row.querySelector('.repl-type').value}))
@@ -1570,7 +1582,7 @@ function confirmerValidationEnMasse(){
 
   let count = 0;
   ids.forEach(id=>{
-    const a = db.arbres.find(x=>x.id===id);
+    const a = db.arbres.find(x=>_memeId(x.id,id));
     if(!a) return;
     if(!a.travaux) a.travaux=[];
     a.travaux.unshift({date, type, desc, cout, photosLinked:[]});
@@ -1594,12 +1606,12 @@ function confirmerValidationEnMasse(){
 function ouvrirValidationEnMasseDepuisCollection(){
   const ids = [...etiqSel];
   if(!ids.length){ afficherIndicateur('⚠️ Aucun arbre sélectionné'); return; }
-  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const arbres = ids.map(id=>db.arbres.find(a=>_memeId(a.id,id))).filter(Boolean);
 
   // Trouver les soins planifiés communs (même type+date) parmi les arbres sélectionnés
   const parGroupe = {};
   arbres.forEach(a=>{
-    (a.soins_planifies||[]).forEach(s=>{
+    getSoinsPlanifies(a).forEach(s=>{
       const k = s.type+'||'+s.date;
       (parGroupe[k]=parGroupe[k]||{type:s.type,date:s.date,ids:[]}).ids.push(a.id);
     });
@@ -1917,7 +1929,7 @@ function renderCollection(c){
               <div style="display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:5px;cursor:pointer;margin-left:12px;transition:.12s"
                 onmouseenter="this.style.background='var(--moss-light)'"
                 onmouseleave="this.style.background=''"
-                onclick="validerSoin(${arbre.id},'${soin.type}','${soin.date}',event)"
+                onclick="validerSoin(${esc(_idJs(arbre.id))},${esc(_idJs(soin.type))},'${soin.date}',event)"
                 title="Cliquer pour valider ce soin">
                 <span style="color:${j<=7?'var(--rust)':'var(--ink)'};flex:1">
                   ${TRAVAUX_ICONS[soin.type]||'📅'} ${soin.type} — ${fmtDate(soin.date)} (J-${j})
@@ -10732,7 +10744,7 @@ function calendrierJour(k){
     ${!liste.length?'<div style="font-size:12.5px;color:var(--stone)">Rien ce jour-là.</div>':''}
     ${prevus.map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:5px">
       ${icoTravail(x.type,18)}<div style="flex:1;min-width:0"><b style="cursor:pointer" onclick="closeModal();openDetail(${x.a.id})">${esc(x.a.nom)}</b><div style="font-size:11.5px;color:var(--stone)">${esc(x.type)} · prévu</div></div>
-      <button class="btn btn-primary" style="font-size:12px;padding:3px 10px" onclick="validerSoin(${x.a.id}, '${x.type.replace(/'/g,"\\'")}', '${x.date}')">✓ Valider</button></div>`).join('')}
+      <button class="btn btn-primary" style="font-size:12px;padding:3px 10px" onclick="validerSoin(${esc(_idJs(x.a.id))}, ${esc(_idJs(x.type))}, '${x.date}')">✓ Valider</button></div>`).join('')}
     ${faits.map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--moss-light);border-radius:8px;margin-bottom:5px;cursor:pointer" onclick="closeModal();openDetail(${x.a.id})">
       ${icoTravail(x.type,18)}<div style="flex:1"><b>${esc(x.a.nom)}</b><div style="font-size:11.5px;color:var(--stone)">${esc(x.type)} · fait ✓</div></div></div>`).join('')}`;
   el.scrollIntoView({behavior:'smooth', block:'nearest'});
