@@ -755,6 +755,8 @@ const TRAVAUX_TYPES_DEFAUT = [
   {nom:'Traitement bactéricide', groupe:'Traitement', emoji:'🦠', freq:30, cout:0, couts_taille:null, mois_debut:3,    mois_fin:10},
   // ── Rempotage ───────────────────────────────────────────────────────────────
   {nom:'Rempotage',              groupe:'Rempotage',  emoji:'🪴', freq:730, cout:0, couts_taille:null, mois_debut:2,    mois_fin:4},
+  {nom:'Rempotage indispensable',groupe:'Rempotage',  emoji:'🔴', freq:730, cout:0, couts_taille:null, mois_debut:2,    mois_fin:4},
+  {nom:'Rempotage à faire',      groupe:'Rempotage',  emoji:'🟡', freq:730, cout:0, couts_taille:null, mois_debut:2,    mois_fin:4},
   {nom:'Travail des racines',    groupe:'Rempotage',  emoji:'🌾', freq:365, cout:0, couts_taille:null, mois_debut:2,    mois_fin:4},
   // ── Ligature ────────────────────────────────────────────────────────────────
   {nom:'Ligature',               groupe:'Ligature',   emoji:'🪢', freq:90,  cout:0, couts_taille:null, mois_debut:null, mois_fin:null},
@@ -766,7 +768,23 @@ const TRAVAUX_TYPES_DEFAUT = [
   {nom:'Observation',            groupe:'Autres',     emoji:'🔍', freq:30,  cout:0, couts_taille:null, mois_debut:null, mois_fin:null},
   {nom:'Autre',                  groupe:'Autres',     emoji:'📝', freq:null,cout:0, couts_taille:null, mois_debut:null, mois_fin:null},
 ];
-function getTravaux(){ return (db.travaux_types&&db.travaux_types.length)?db.travaux_types:TRAVAUX_TYPES_DEFAUT; }
+// Priorités de rempotage : toujours disponibles, même avec une liste de types personnalisée
+const TYPES_REMPOTAGE_PRIORITE = ['Rempotage indispensable','Rempotage à faire'];
+function getTravaux(){
+  if(!(db.travaux_types&&db.travaux_types.length)) return TRAVAUX_TYPES_DEFAUT;
+  const manquants = TYPES_REMPOTAGE_PRIORITE.filter(n=>!db.travaux_types.some(t=>t.nom===n));
+  if(!manquants.length) return db.travaux_types;
+  const iRemp = db.travaux_types.findIndex(t=>t.nom==='Rempotage');
+  const ajout = manquants.map(n=>({...TRAVAUX_TYPES_DEFAUT.find(t=>t.nom===n)}));
+  const l = db.travaux_types.slice();
+  l.splice(iRemp>=0?iRemp+1:l.length, 0, ...ajout);
+  return l;
+}
+// Un rempotage planifié avec une priorité (« Rempotage indispensable », « Rempotage à faire »…)
+// est enregistré comme « Rempotage » une fois effectué ; sa reprogrammation par défaut est « Rempotage à faire »
+function _estRempotagePrio(t){ return typeof t==='string' && t.startsWith('Rempotage ') && t!=='Rempotage'; }
+function typeRealise(t){ return _estRempotagePrio(t) ? 'Rempotage' : t; }
+function typeReprog(t){ return _estRempotagePrio(t) ? 'Rempotage à faire' : t; }
 Object.defineProperty(window,'TRAVAUX_TYPES',{get:()=>getTravaux().map(t=>t.nom),configurable:true});
 function getSoinFreq(nom){
   const t = getTravaux().find(x=>x.nom===nom);
@@ -1430,6 +1448,7 @@ function validerSoin(arbreId, soinType, soinDate, event){
   const freqDefaut = getSoinFreq(soinType);
   const coutDefaut = getSoinCoutPourArbre(soinType, a);
   const prochainDefaut = freqDefaut ? new Date(Date.now() + freqDefaut*86400000).toISOString().split('T')[0] : '';
+  const tReal = typeRealise(soinType), tReprog = typeReprog(soinType);
 
   const m = document.getElementById('modal');
   m.innerHTML=`
@@ -1445,7 +1464,7 @@ function validerSoin(arbreId, soinType, soinDate, event){
     <input type="hidden" id="v-soin-date-orig" value="${soinDate}">
     <div class="form-row">
       <div class="fg"><label>Date d'exécution</label><input id="v-date" type="date" value="${today}"></div>
-      <div class="fg"><label>Type de soin réalisé</label><select id="v-type">${(TRAVAUX_TYPES.includes(soinType)?TRAVAUX_TYPES:[soinType,...TRAVAUX_TYPES]).map(t=>`<option ${t===soinType?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="fg"><label>Type de soin réalisé</label><select id="v-type">${(TRAVAUX_TYPES.includes(tReal)?TRAVAUX_TYPES:[tReal,...TRAVAUX_TYPES]).map(t=>`<option ${t===tReal?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
     </div>
     <div class="form-row one"><div class="fg"><label>Notes (facultatif)</label><input id="v-desc" placeholder="Ex: Biogold 1 pastille, bon état…"></div></div>
     <div class="form-row">
@@ -1454,7 +1473,7 @@ function validerSoin(arbreId, soinType, soinDate, event){
     <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
       <label style="font-size:12px;font-weight:500">Reprogrammations (aucune, une ou plusieurs)</label>
       <div id="v-replanif-list" style="margin-top:8px">
-        ${prochainDefaut ? replanifRowHtml('v', soinType, prochainDefaut) : ''}
+        ${prochainDefaut ? replanifRowHtml('v', tReprog, prochainDefaut) : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
         ${getTravaux().filter(t=>t.freq).slice(0,6).map(t=>
@@ -1518,6 +1537,7 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
   const prochainDefaut = freqDefaut ? new Date(Date.now() + freqDefaut*86400000).toISOString().split('T')[0] : '';
   const arbres = arbreIds.map(id=>db.arbres.find(a=>_memeId(a.id,id))).filter(Boolean);
   const coutDefaut = arbres.length ? getSoinCoutPourArbre(soinType, arbres[0]) : 0;
+  const tReal = typeRealise(soinType), tReprog = typeReprog(soinType);
 
   const m = document.getElementById('modal');
   m.innerHTML=`
@@ -1537,7 +1557,7 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
     <input type="hidden" id="vm-arbre-ids" value="${arbreIds.join(',')}">
     <div class="form-row">
       <div class="fg"><label>Date d'exécution</label><input id="vm-date" type="date" value="${today}"></div>
-      <div class="fg"><label>Type de soin réalisé</label><select id="vm-type">${(TRAVAUX_TYPES.includes(soinType)?TRAVAUX_TYPES:[soinType,...TRAVAUX_TYPES]).map(t=>`<option ${t===soinType?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="fg"><label>Type de soin réalisé</label><select id="vm-type">${(TRAVAUX_TYPES.includes(tReal)?TRAVAUX_TYPES:[tReal,...TRAVAUX_TYPES]).map(t=>`<option ${t===tReal?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
     </div>
     <div class="form-row one"><div class="fg"><label>Notes (facultatif, appliquées à tous)</label><input id="vm-desc" placeholder="Ex: Biogold 1 pastille, bon état…"></div></div>
     <div class="form-row">
@@ -1546,7 +1566,7 @@ function ouvrirValidationEnMasse(soinType, soinDate, arbreIds){
     <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:14px">
       <label style="font-size:12px;font-weight:500">Reprogrammations pour tous les arbres (aucune, une ou plusieurs)</label>
       <div id="vm-replanif-list" style="margin-top:8px">
-        ${prochainDefaut ? replanifRowHtml('vm', soinType, prochainDefaut) : ''}
+        ${prochainDefaut ? replanifRowHtml('vm', tReprog, prochainDefaut) : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
         ${getTravaux().filter(t=>t.freq).slice(0,6).map(t=>
@@ -1754,7 +1774,7 @@ function validerTousSoinsUrgents(event){
     aValider.get(a).forEach(soin=>{
       // Enregistrer dans l'historique
       if(!a.travaux) a.travaux=[];
-      a.travaux.unshift({date:today, type:soin.type, desc:'', cout:getSoinCoutPourArbre(soin.type,a), photosLinked:[]});
+      a.travaux.unshift({date:today, type:typeRealise(soin.type), desc:'', cout:getSoinCoutPourArbre(soin.type,a), photosLinked:[]});
       // Retirer le soin planifié
       if(!a.soins_planifies) a.soins_planifies = getSoinsPlanifies(a);
       a.soins_planifies = a.soins_planifies.filter(s=>!(s.type===soin.type && s.date===soin.date));
@@ -1762,7 +1782,7 @@ function validerTousSoinsUrgents(event){
       const freq = getSoinFreq(soin.type);
       if(freq){
         const pdate = new Date(Date.now()+freq*86400000).toISOString().split('T')[0];
-        a.soins_planifies.push({type:soin.type, date:pdate, notes:''});
+        a.soins_planifies.push({type:typeReprog(soin.type), date:pdate, notes:''});
       }
       // Déclencher rappel automatique
       declencherRappelSoin(a, soin.type, today);
@@ -1982,7 +2002,7 @@ function renderCollection(c){
             ?`<img src="${lastPhoto.dataUrl}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" alt="${a.nom}">`
             :`<span style="font-size:56px">${getEmoji(a.espece)}</span>`}
           <span class="card-style-tag">${styleShort(a.style)}</span>
-          <span onclick="event.stopPropagation();toggleEtiqSel(${a.id})" style="position:absolute;top:6px;left:6px;width:22px;height:22px;background:${etiqSel.has(a.id)?'var(--moss)':'rgba(255,255,255,.75)'};border:2px solid ${etiqSel.has(a.id)?'var(--moss)':'rgba(0,0,0,.3)'};border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;z-index:10">${etiqSel.has(a.id)?'✓':''}</span>
+          <span onclick="event.stopPropagation();toggleEtiqSel(${esc(_idJs(a.id))})" style="position:absolute;top:6px;left:6px;width:22px;height:22px;background:${etiqSel.has(a.id)?'var(--moss)':'rgba(255,255,255,.75)'};border:2px solid ${etiqSel.has(a.id)?'var(--moss)':'rgba(0,0,0,.3)'};border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;z-index:10">${etiqSel.has(a.id)?'✓':''}</span>
         </div>
         <div class="card-body">
           <div class="card-nom">${a.nom}</div>
@@ -9189,6 +9209,7 @@ function ouvrirAccueil(){
 
 // ── GÉNÉRATEUR D'ÉTIQUETTES ───────────────────────────────────────────────────
 function toggleEtiqSel(id){
+  const arb = db.arbres.find(x=>_memeId(x.id,id)); if(arb) id = arb.id;
   if(etiqSel.has(id)) etiqSel.delete(id);
   else etiqSel.add(id);
   render();
