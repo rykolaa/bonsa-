@@ -3376,7 +3376,7 @@ function openDetail(id){
 
       <div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
         <button class="btn btn-primary" onclick="openEditModal(${a.id})" style="flex:1">✏️ Modifier</button>
-        <button class="btn" onclick="genererEtiquette(${a.id})" title="Générer étiquette QR" style="background:var(--moss-light);color:var(--moss);border-color:var(--moss-mid)">🏷️ Étiquette</button>
+        <button class="btn" onclick="genererEtiquette(${esc(_idJs(a.id))})" title="Générer étiquette QR" style="background:var(--moss-light);color:var(--moss);border-color:var(--moss-mid)">🏷️ Étiquette</button>
         <button class="btn" onclick="imprimerFichePDF([${a.id}])" title="Imprimer fiche PDF" style="background:#e8f0ff;color:#1a4fa5;border-color:#b0c8f0">📄 PDF</button>
         <button class="btn btn-danger" onclick="deleteArbre(${a.id})">🗑️</button>
       </div>
@@ -9524,72 +9524,96 @@ function masseSupprimer(){
 }
 
 
+// QR code généré dans l'app (bibliothèque déjà chargée) → image intégrée à l'étiquette,
+// pour ne pas dépendre du chargement de la fenêtre d'impression
+function _qrDataUrl(texte, px=256){
+  try{
+    if(typeof QRCode==='undefined') return '';
+    const d = document.createElement('div');
+    new QRCode(d,{text:texte,width:px,height:px,colorDark:'#1a1a18',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    const c = d.querySelector('canvas');
+    return c ? c.toDataURL('image/png') : (d.querySelector('img')?.src||'');
+  }catch(e){ console.warn('QR', e); return ''; }
+}
+
 function imprimerEtiquettesSelection(){
   const ids = [...etiqSel];
   if(!ids.length) return;
-  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const arbres = ids.map(id=>db.arbres.find(a=>_memeId(a.id,id))).filter(Boolean);
+  const PAR_PAGE = 10; // 2 colonnes × 5 rangées sur A4
 
-  const etiquettesHTML = arbres.map(a=>{
+  const etiquette = a=>{
     const url = `${location.origin}${location.pathname}?arbre=${a.id}`;
+    const qr = _qrDataUrl(url);
     const nomLatin = a.nom_latin || '';
     const dateAcq = a.date_acq ? new Date(a.date_acq).toLocaleDateString('fr-CH',{year:'numeric',month:'long',day:'numeric'}) : '—';
-    const origine = a.origine || '—';
     return `<div class="etiquette">
       <div class="et-left">
         <div>
-          <div class="et-nom">${a.nom}</div>
-          ${nomLatin ? `<div class="et-latin">${nomLatin}</div>` : ''}
+          <div class="et-nom">${esc(a.nom||'')}</div>
+          ${nomLatin ? `<div class="et-latin">${esc(nomLatin)}</div>` : ''}
         </div>
         <div class="et-infos">
-          <div class="et-ligne"><span class="et-key">Espèce</span><span class="et-val">${a.espece||'—'}</span></div>
-          <div class="et-ligne"><span class="et-key">Origine</span><span class="et-val">${origine}</span></div>
+          <div class="et-ligne"><span class="et-key">Espèce</span><span class="et-val">${esc(a.espece||'—')}</span></div>
+          <div class="et-ligne"><span class="et-key">Origine</span><span class="et-val">${esc(a.origine||'—')}</span></div>
           <div class="et-ligne"><span class="et-key">Acquis</span><span class="et-val">${dateAcq}</span></div>
         </div>
       </div>
       <div class="et-right">
         <div class="et-emoji">${getEmoji(a.espece)||'🌿'}</div>
-        <div class="qrcode" data-url="${url}"></div>
+        ${qr ? `<img class="qr" src="${qr}" alt="">` : ''}
         <div class="et-scan">Scanner<br>pour la fiche</div>
       </div>
     </div>`;
-  }).join('');
+  };
+  let pages = '';
+  for(let i=0;i<arbres.length;i+=PAR_PAGE) pages += `<div class="page-a4">${arbres.slice(i,i+PAR_PAGE).map(etiquette).join('')}</div>`;
+  const nbPages = Math.ceil(arbres.length/PAR_PAGE);
 
   const win = window.open('','_blank','width=900,height=700');
+  if(!win){ alert('⚠️ La fenêtre d\'impression a été bloquée. Autorise les fenêtres pop-up pour ce site.'); return; }
   win.document.write(`<!DOCTYPE html>
 <html lang="fr"><head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Étiquettes bonsaï</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f0f0f0;padding:20px;display:flex;flex-direction:column;align-items:center;gap:16px}
-  .page-a4{width:210mm;min-height:297mm;background:#fff;padding:8mm 10mm;display:grid;grid-template-columns:1fr 1fr;gap:4mm;align-content:start;box-shadow:0 2px 12px rgba(0,0,0,.15)}
-  .etiquette{width:85.6mm;height:50mm;background:#fff;border:1px solid #ccc;border-radius:4px;display:flex;overflow:hidden}
-  .et-left{flex:1;padding:5mm 4mm 5mm 6mm;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid #e8e8e8;min-width:0}
-  .et-nom{font-size:12pt;font-weight:700;color:#1a1a18;line-height:1.2;margin-bottom:1mm}
-  .et-latin{font-size:7pt;color:#6b6b5e;font-style:italic;margin-bottom:2mm}
+  @page{size:A4 portrait;margin:0}
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:'Helvetica Neue',Arial,sans-serif;background:#e8e8e4;padding:20px;display:flex;flex-direction:column;align-items:center;gap:16px}
+  .barre{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .conseil{font-size:12px;color:#555;text-align:center;max-width:520px;line-height:1.4}
+  /* Page A4 exacte : 2 × 85,6 mm + 4 mm = 175,2 mm de large, 5 × 50 mm + 4 × 4 mm = 266 mm de haut, centrées */
+  .page-a4{width:210mm;height:297mm;background:#fff;padding:15.5mm 17.4mm;display:grid;
+    grid-template-columns:85.6mm 85.6mm;grid-auto-rows:50mm;gap:4mm;align-content:start;
+    overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.15);break-after:page;page-break-after:always}
+  .page-a4:last-child{break-after:auto;page-break-after:auto}
+  .etiquette{width:85.6mm;height:50mm;background:#fff;border:1px solid #bbb;border-radius:3mm;display:flex;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+  .et-left{flex:1;padding:4.5mm 3mm 4mm 5mm;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid #e4e4e0;min-width:0}
+  .et-nom{font-size:12pt;font-weight:700;color:#1a1a18;line-height:1.15;margin-bottom:1mm;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .et-latin{font-size:7pt;color:#6b6b5e;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .et-infos{display:flex;flex-direction:column;gap:1mm}
-  .et-ligne{font-size:7pt;color:#444;display:flex;gap:2mm}
-  .et-key{color:#888;min-width:13mm;font-size:6.5pt;text-transform:uppercase;letter-spacing:.03em;padding-top:.5mm}
-  .et-val{color:#222;font-weight:500;flex:1;font-size:7pt}
-  .et-right{width:22mm;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3mm;background:#fafafa;gap:1.5mm}
-  .qrcode img,.qrcode canvas{width:16mm!important;height:16mm!important}
-  .et-scan{font-size:5.5pt;color:#999;text-align:center;line-height:1.3}
-  .et-emoji{font-size:16pt}
+  .et-ligne{display:flex;gap:2mm;align-items:baseline;min-width:0}
+  .et-key{color:#888;min-width:13mm;font-size:6pt;text-transform:uppercase;letter-spacing:.03em}
+  .et-val{color:#222;font-weight:500;flex:1;font-size:7pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .et-right{width:24mm;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2.5mm;background:#f7f7f4;gap:1.5mm}
+  .qr{width:17mm;height:17mm;image-rendering:pixelated}
+  .et-scan{font-size:5.5pt;color:#888;text-align:center;line-height:1.25}
+  .et-emoji{font-size:14pt;line-height:1}
   .btn-print{background:#2d5a27;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:14px;cursor:pointer}
   .btn-print:hover{background:#1e3e1b}
-  @media print{body{background:#fff;padding:0}.btn-print{display:none}.page-a4{box-shadow:none;padding:8mm 10mm}}
+  @media print{
+    body{background:#fff;padding:0;gap:0;display:block}
+    .barre{display:none}
+    .page-a4{box-shadow:none}
+  }
 </style>
 </head><body>
-<button class="btn-print" onclick="window.print()">🖨️ Imprimer (${arbres.length} étiquette${arbres.length>1?'s':''})</button>
-<div class="page-a4">${etiquettesHTML}</div>
-<script>
-window.onload=function(){
-  document.querySelectorAll('.qrcode').forEach(el=>{
-    new QRCode(el,{text:el.dataset.url,width:64,height:64,colorDark:'#1a1a18',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  });
-};
-<\/script>
+<div class="barre">
+  <button class="btn-print" onclick="window.print()">🖨️ Imprimer (${arbres.length} étiquette${arbres.length>1?'s':''} · ${nbPages} page${nbPages>1?'s':''} A4)</button>
+  <div class="conseil">Dans la fenêtre d'impression : format <b>A4</b>, échelle <b>100 %</b> (ou « Taille réelle »), marges <b>Aucune</b> ou « Par défaut ». Évite « Ajuster à la page ».</div>
+</div>
+${pages}
 </body></html>`);
   win.document.close();
 }
@@ -9764,7 +9788,7 @@ function imprimerFichePDF(ids){
 }
 
 function genererEtiquette(id){
-  const a = db.arbres.find(x=>x.id===id);
+  const a = db.arbres.find(x=>_memeId(x.id,id));
   if(!a) return;
 
   const url = `${location.origin}${location.pathname}?arbre=${a.id}`;
@@ -9779,7 +9803,6 @@ function genererEtiquette(id){
 <head>
 <meta charset="UTF-8">
 <title>Étiquette — ${a.nom}</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f0f0f0;display:flex;flex-direction:column;align-items:center;padding:30px;gap:20px}
@@ -9822,8 +9845,11 @@ function genererEtiquette(id){
   #qrcode img, #qrcode canvas{width:18mm!important;height:18mm!important}
   .et-scan{font-size:6pt;color:#999;text-align:center;line-height:1.3}
   .et-emoji{font-size:20pt;margin-bottom:1mm}
+  @page{size:A4 portrait;margin:10mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @media print{
-    body{background:#fff;padding:10mm}
+    body{background:#fff;padding:0}
+    h2,.hint{display:none}
     .btn-print{display:none}
     .etiquette{box-shadow:none}
   }
@@ -9860,21 +9886,13 @@ function genererEtiquette(id){
   </div>
   <div class="et-right">
     <div class="et-emoji">${getEmoji(a.espece)||'🌿'}</div>
-    <div id="qrcode"></div>
+    ${(q=>q?`<img id="qrcode" src="${q}" style="width:18mm;height:18mm;image-rendering:pixelated" alt="">`:"")(_qrDataUrl(url))}
     <div class="et-scan">Scanner<br>pour la fiche</div>
   </div>
 </div>
 <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
 <div class="hint">Conseil : imprimez sur papier épais, plastifiez et fixez sur le pot</div>
-<script>
-  window.onload = function(){
-    new QRCode(document.getElementById('qrcode'),{
-      text:'${url}',width:80,height:80,
-      colorDark:'#1a1a18',colorLight:'#ffffff',
-      correctLevel:QRCode.CorrectLevel.M
-    });
-  };
-<\/script>
+
 </body>
 </html>`);
   win.document.close();
