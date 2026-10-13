@@ -9540,7 +9540,7 @@ function imprimerEtiquettesSelection(){
   const ids = [...etiqSel];
   if(!ids.length) return;
   const arbres = ids.map(id=>db.arbres.find(a=>_memeId(a.id,id))).filter(Boolean);
-  const PAR_PAGE = 10; // 2 colonnes × 5 rangées sur A4
+  const PAR_PAGE = 10; // planche de cartes 2 colonnes × 5 rangées (papier Letter)
 
   const etiquette = a=>{
     const url = `${location.origin}${location.pathname}?arbre=${a.id}`;
@@ -9578,25 +9578,26 @@ function imprimerEtiquettesSelection(){
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Étiquettes bonsaï</title>
 <style>
-  @page{size:A4 portrait;margin:0}
+  /* Planche de cartes de visite : papier Letter 215,9 × 279,4 mm, marges haut/bas 12,7 mm,
+     gauche/droite 19,05 mm, cartes 88,9 × 50,8 mm jointives (2 × 5) */
+  @page{size:letter portrait;margin:0}
   *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{font-family:'Helvetica Neue',Arial,sans-serif;background:#e8e8e4;padding:20px;display:flex;flex-direction:column;align-items:center;gap:16px}
   .barre{display:flex;flex-direction:column;align-items:center;gap:6px}
   .conseil{font-size:12px;color:#555;text-align:center;max-width:520px;line-height:1.4}
-  /* Page A4 exacte : 2 × 85,6 mm + 4 mm = 175,2 mm de large, 5 × 50 mm + 4 × 4 mm = 266 mm de haut, centrées */
-  .page-a4{width:210mm;height:297mm;background:#fff;padding:15.5mm 17.4mm;display:grid;
-    grid-template-columns:85.6mm 85.6mm;grid-auto-rows:50mm;gap:4mm;align-content:start;
+  .page-a4{width:215.9mm;height:279.4mm;background:#fff;padding:12.7mm 19.05mm;display:grid;
+    grid-template-columns:88.9mm 88.9mm;grid-auto-rows:50.8mm;gap:0;align-content:start;
     overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.15);break-after:page;page-break-after:always}
   .page-a4:last-child{break-after:auto;page-break-after:auto}
-  .etiquette{width:85.6mm;height:50mm;background:#fff;border:1px solid #bbb;border-radius:3mm;display:flex;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
-  .et-left{flex:1;padding:4.5mm 3mm 4mm 5mm;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid #e4e4e0;min-width:0}
+  .etiquette{width:88.9mm;height:50.8mm;background:#fff;display:flex;overflow:hidden;break-inside:avoid;page-break-inside:avoid;outline:.2mm dashed #ccc;outline-offset:-.1mm}
+  .et-left{flex:1;padding:5mm 3mm 4.5mm 6mm;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid #e4e4e0;min-width:0}
   .et-nom{font-size:12pt;font-weight:700;color:#1a1a18;line-height:1.15;margin-bottom:1mm;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .et-latin{font-size:7pt;color:#6b6b5e;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .et-infos{display:flex;flex-direction:column;gap:1mm}
   .et-ligne{display:flex;gap:2mm;align-items:baseline;min-width:0}
   .et-key{color:#888;min-width:13mm;font-size:6pt;text-transform:uppercase;letter-spacing:.03em}
   .et-val{color:#222;font-weight:500;flex:1;font-size:7pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .et-right{width:24mm;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2.5mm;background:#f7f7f4;gap:1.5mm}
+  .et-right{width:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3mm 4mm 3mm 2mm;gap:1.5mm}
   .qr{width:17mm;height:17mm;image-rendering:pixelated}
   .et-scan{font-size:5.5pt;color:#888;text-align:center;line-height:1.25}
   .et-emoji{font-size:14pt;line-height:1}
@@ -9606,12 +9607,13 @@ function imprimerEtiquettesSelection(){
     body{background:#fff;padding:0;gap:0;display:block}
     .barre{display:none}
     .page-a4{box-shadow:none}
+    .etiquette{outline:none}
   }
 </style>
 </head><body>
 <div class="barre">
-  <button class="btn-print" onclick="window.print()">🖨️ Imprimer (${arbres.length} étiquette${arbres.length>1?'s':''} · ${nbPages} page${nbPages>1?'s':''} A4)</button>
-  <div class="conseil">Dans la fenêtre d'impression : format <b>A4</b>, échelle <b>100 %</b> (ou « Taille réelle »), marges <b>Aucune</b> ou « Par défaut ». Évite « Ajuster à la page ».</div>
+  <button class="btn-print" onclick="window.print()">🖨️ Imprimer (${arbres.length} étiquette${arbres.length>1?'s':''} · ${nbPages} page${nbPages>1?'s':''})</button>
+  <div class="conseil">Planche de cartes 2 × 5 sur papier <b>Letter</b> (21,6 × 27,9 cm). Dans la fenêtre d'impression : taille du papier <b>Letter</b>, échelle <b>100 %</b> (« Taille réelle »), marges <b>Aucune</b>. Évite « Ajuster à la page ». Les pointillés à l'écran ne s'impriment pas.</div>
 </div>
 ${pages}
 </body></html>`);
@@ -9808,7 +9810,7 @@ function genererEtiquette(id){
   body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f0f0f0;display:flex;flex-direction:column;align-items:center;padding:30px;gap:20px}
   h2{font-size:14px;color:#555;font-weight:400}
   .etiquette{
-    width:85.6mm;height:54mm;
+    width:88.9mm;height:50.8mm;
     background:#fff;
     border:1px solid #ccc;
     border-radius:4px;
@@ -9845,11 +9847,12 @@ function genererEtiquette(id){
   #qrcode img, #qrcode canvas{width:18mm!important;height:18mm!important}
   .et-scan{font-size:6pt;color:#999;text-align:center;line-height:1.3}
   .et-emoji{font-size:20pt;margin-bottom:1mm}
-  @page{size:A4 portrait;margin:10mm}
+  @page{size:letter portrait;margin:12.7mm 19.05mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @media print{
-    body{background:#fff;padding:0}
+    body{background:#fff;padding:0;display:block}
     h2,.hint{display:none}
+    .etiquette{border:none;border-radius:0}
     .btn-print{display:none}
     .etiquette{box-shadow:none}
   }
@@ -9891,7 +9894,7 @@ function genererEtiquette(id){
   </div>
 </div>
 <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
-<div class="hint">Conseil : imprimez sur papier épais, plastifiez et fixez sur le pot</div>
+<div class="hint">S'imprime dans la 1re case (en haut à gauche) de la planche de cartes Letter. Impression : papier <b>Letter</b>, échelle <b>100 %</b>.</div>
 
 </body>
 </html>`);
