@@ -4074,7 +4074,8 @@ const SORTIE_MOTIFS = [
   {k:'maladie', ico:'🦠', lib:'Éliminé (maladie)',    coul:'#8b4a2f', fond:'#f6e9e2'},
   {k:'donne',   ico:'🎁', lib:'Donné',                coul:'#5b7a9a', fond:'#e7eef5'},
   {k:'vendu',   ico:'💰', lib:'Vendu',                coul:'#b8860b', fond:'#f7f0dc'},
-  {k:'vole',    ico:'🚨', lib:'Volé',                 coul:'#b42814', fond:'#f8e3df'}
+  {k:'vole',    ico:'🚨', lib:'Volé',                 coul:'#b42814', fond:'#f8e3df'},
+  {k:'demantele',ico:'✂️', lib:'Démantelé',           coul:'#2d6a5a', fond:'#e2f0ec'}
 ];
 function _motifSortie(k){ return SORTIE_MOTIFS.find(m=>m.k===k) || {k, ico:'📦', lib:k||'Sorti', coul:'#6b6b5e', fond:'#efede8'}; }
 function _sortis(){ if(!Array.isArray(db.arbres_sortis)) db.arbres_sortis = []; return db.arbres_sortis; }
@@ -4152,11 +4153,12 @@ function _sortieChoisir(k, initial){
   document.getElementById('so-notes-lib').textContent =
     k==='mort' ? 'Cause probable / circonstances' :
     k==='maladie' ? 'Maladie ou ravageur, traitements essayés' :
-    k==='vole' ? 'Circonstances (lieu, plainte…)' : 'Notes';
+    k==='vole' ? 'Circonstances (lieu, plainte…)' :
+    k==='demantele' ? 'Arbres créés à partir de celui-ci (n°)' : 'Notes';
   // Pot : par défaut il reste si l'arbre est mort, il part sinon
   const radios = document.querySelectorAll('input[name="so-pot"]');
   if(radios.length){
-    const def = (k==='mort' || k==='maladie') ? 'reste' : 'part';
+    const def = (k==='mort' || k==='maladie' || k==='demantele') ? 'reste' : 'part';
     radios.forEach(r=>{ r.checked = r.value===def; });
   }
 }
@@ -4240,7 +4242,7 @@ function ouvrirArbresSortis(filtre){
       ${SORTIE_MOTIFS.map(m=>chip(m.k, m.ico+' '+m.lib, nb(m.k))).join('')}
     </div>
     ${liste.map(ligne).join('')}
-    ${!liste.length?`<div style="color:var(--stone);text-align:center;padding:24px 10px;font-size:13px">${tous.length?'Aucun arbre pour ce motif.':'Aucun arbre sorti pour l\'instant.<br><br>Pour sortir un arbre mort, éliminé, donné, vendu ou volé : ouvrez sa fiche puis « 🚪 Sortir ».'}</div>`:''}
+    ${!liste.length?`<div style="color:var(--stone);text-align:center;padding:24px 10px;font-size:13px">${tous.length?'Aucun arbre pour ce motif.':'Aucun arbre sorti pour l\'instant.<br><br>Pour sortir un arbre mort, éliminé, donné, vendu, volé ou démantelé : ouvrez sa fiche puis « 🚪 Sortir ».'}</div>`:''}
   </div>
   <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Fermer</button></div>`;
   document.getElementById('modal-overlay').style.display = 'flex';
