@@ -446,6 +446,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <button class="nav-tab" id="mob-tab-atelier" onclick="setPage('atelier');toggleMobileMenu()">🪴 Atelier</button>
     <button class="nav-tab" id="mob-tab-sante" onclick="setPage('sante');toggleMobileMenu()">🌡️ Santé</button>
     <button class="nav-tab" id="mob-tab-stats" onclick="setPage('stats');toggleMobileMenu()">📊 Statistiques</button>
+    <button class="nav-tab" onclick="toggleMobileMenu();ouvrirArbresSortis('')">🕯️ Arbres sortis</button>
     <hr style="border-color:rgba(255,255,255,.1);margin:4px 0">
     <button class="mob-btn" style="background:#2d5a27" onclick="toggleMobileMenu();ouvrirScanner()">📷 Scanner une étiquette</button>
     <button class="mob-btn" style="background:var(--moss-mid)" onclick="openAddModal();toggleMobileMenu()">＋ Nouvel arbre</button>
@@ -522,6 +523,10 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
           <button class="flt" id="flt-urgent" onclick="setFlt('urgent')">🔔 Soins urgents <span class="cnt" id="cnt-urgent">0</span></button>
           <button class="flt" id="flt-sante-low" onclick="setFlt('sante-low')">⚠️ Santé &lt; 70% <span class="cnt" id="cnt-sante-low">0</span></button>
         </div>
+      </div>
+      <!-- Arbres sortis -->
+      <div class="sidebar-section">
+        <button class="flt" id="btn-sortis" onclick="ouvrirArbresSortis('')" style="font-weight:500">🕯️ Arbres sortis <span class="cnt" id="cnt-sortis">0</span></button>
       </div>
     </div>
     <div class="content" id="content"></div>
@@ -1024,7 +1029,7 @@ function majLatinField(){
   }
 }
 
-let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], cultivars:[], travaux_types:[], collections_pots:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
+let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], arbres_sortis:[], cultivars:[], travaux_types:[], collections_pots:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
 let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, completude:true, style:true, origine:true, espece:true, taille:false, alertes:false}};
 const etiqSel = new Set();
 
@@ -1155,6 +1160,7 @@ function updateSidebar(){
   const F = _filtres();
   const nbActifs = Object.values(F).filter(Boolean).length;
   document.getElementById('cnt-all').textContent = all.length;
+  { const cs = document.getElementById('cnt-sortis'); if(cs) cs.textContent = (db.arbres_sortis||[]).length; }
   document.getElementById('flt-all')?.classList.toggle('active', nbActifs===0);
   const bAl = base('alerte');
   document.getElementById('cnt-urgent').textContent = (fltActif('alerte','urgent')?'✓ ':'') + bAl.filter(a=>_fltTest(a,'alerte','urgent')).length;
@@ -3115,6 +3121,7 @@ function renderStats(c){
         <span style="font-family:var(--ff-display);font-size:22px;font-weight:500;color:var(--gold)">${fmtCHF(totalVal)}</span>
       </div>
     </div>
+    ${_statsSortiesCard()}
   </div>`;
 }
 
@@ -3378,7 +3385,8 @@ function openDetail(id){
         <button class="btn btn-primary" onclick="openEditModal(${a.id})" style="flex:1">✏️ Modifier</button>
         <button class="btn" onclick="genererEtiquette(${esc(_idJs(a.id))})" title="Générer étiquette QR" style="background:var(--moss-light);color:var(--moss);border-color:var(--moss-mid)">🏷️ Étiquette</button>
         <button class="btn" onclick="imprimerFichePDF([${a.id}])" title="Imprimer fiche PDF" style="background:#e8f0ff;color:#1a4fa5;border-color:#b0c8f0">📄 PDF</button>
-        <button class="btn btn-danger" onclick="deleteArbre(${a.id})">🗑️</button>
+        <button class="btn" onclick="ouvrirSortieArbre(${esc(_idJs(a.id))})" title="Sortir de la collection (mort, éliminé, donné, vendu, volé)" style="background:#efede8;color:#4a4a40;border-color:#d6d2c8">🚪 Sortir</button>
+        <button class="btn btn-danger" onclick="deleteArbre(${a.id})" title="Supprimer définitivement">🗑️</button>
       </div>
     </div>
   </div>`;
@@ -3649,7 +3657,7 @@ function saveArbre(id){
   if(!nom){alert('Le nom est requis');return;}
   const origineVal = document.getElementById('f-ori').value;
   const data = {
-    nom, num:document.getElementById('f-num').value.trim()||`YUG-${String(db.arbres.reduce((m,x)=>Math.max(m, parseInt(String(x.num||'').replace(/\D/g,''))||0),0)+1).padStart(3,'0')}`,
+    nom, num:document.getElementById('f-num').value.trim()||`YUG-${String([...db.arbres, ...(db.arbres_sortis||[])].reduce((m,x)=>Math.max(m, parseInt(String(x.num||'').replace(/\D/g,''))||0),0)+1).padStart(3,'0')}`,
     espece:document.getElementById('f-espece').value,
     nom_latin:document.getElementById('f-nom-latin')?.value?.trim()||'',
     cultivar:(()=>{
@@ -4046,11 +4054,249 @@ function supprimerObservation(arbreId, idx){
 }
 
 function deleteArbre(id){
-  if(!confirm('Supprimer cet arbre de la collection ?')) return;
+  if(!confirm('Supprimer DÉFINITIVEMENT cet arbre ?\n\nS\'il est mort, éliminé, donné, vendu ou volé, utilisez plutôt « 🚪 Sortir » dans sa fiche : il quitte la collection mais son historique est conservé.')) return;
   const _aSuppr = db.arbres.find(a=>a.id===id);
   if(_aSuppr && (_aSuppr.documents||[]).length) docIdbSupprimerArbre(_aSuppr.id, _aSuppr.documents);
   db.arbres = db.arbres.filter(a=>a.id!==id);
   closeDetail();render();
+}
+
+
+// ── ARBRES SORTIS DE LA COLLECTION ────────────────────────────────────────────
+// Un arbre mort, éliminé pour maladie, donné, vendu ou volé n'est plus effacé :
+// il passe de db.arbres à db.arbres_sortis avec un objet `sortie`
+// {motif, date, destinataire, prix, notes, pot, pot_id, le}. Ses photos et
+// documents restent dans IndexedDB (et sur GitHub), ses rempotages et travaux
+// restent attachés. Le reste de l'app ne lit que db.arbres : un arbre sorti
+// disparaît donc de la collection, des stats, des alertes et des filtres.
+const SORTIE_MOTIFS = [
+  {k:'mort',    ico:'🥀', lib:'Mort',                 coul:'#6b6b5e', fond:'#efede8'},
+  {k:'maladie', ico:'🦠', lib:'Éliminé (maladie)',    coul:'#8b4a2f', fond:'#f6e9e2'},
+  {k:'donne',   ico:'🎁', lib:'Donné',                coul:'#5b7a9a', fond:'#e7eef5'},
+  {k:'vendu',   ico:'💰', lib:'Vendu',                coul:'#b8860b', fond:'#f7f0dc'},
+  {k:'vole',    ico:'🚨', lib:'Volé',                 coul:'#b42814', fond:'#f8e3df'}
+];
+function _motifSortie(k){ return SORTIE_MOTIFS.find(m=>m.k===k) || {k, ico:'📦', lib:k||'Sorti', coul:'#6b6b5e', fond:'#efede8'}; }
+function _sortis(){ if(!Array.isArray(db.arbres_sortis)) db.arbres_sortis = []; return db.arbres_sortis; }
+// Version sans images pour la sauvegarde / la synchro / les exports
+function _sortisLeger(){ return _sortis().map(a=>({...a, photos:(a.photos||[]).map(p=>({...p, dataUrl:null}))})); }
+// Pot actuellement en place sur un arbre (dernier rempotage avec pot)
+function _potActuelArbre(id){
+  const remps = (db.rempotages||[]).filter(r=>String(r.arbre_id)===String(id) && r.pot_id).sort((x,y)=>(y.date||'').localeCompare(x.date||''));
+  return remps[0] ? (db.pots||[]).find(p=>p.id===remps[0].pot_id) || null : null;
+}
+// Un arbre ne peut pas être à la fois dans la collection et parmi les sortis
+// (cas d'une modification simultanée sur deux appareils) : la sortie l'emporte.
+function _dedoublonnerSortis(){
+  const ids = new Set(_sortis().map(a=>String(a.id)));
+  if(ids.size) db.arbres = db.arbres.filter(a=>!ids.has(String(a.id)));
+}
+
+function ouvrirSortieArbre(id){
+  const enEdition = _sortis().find(x=>String(x.id)===String(id));
+  const a = enEdition || db.arbres.find(x=>String(x.id)===String(id));
+  if(!a) return;
+  const s = (enEdition && enEdition.sortie) || {};
+  const motif = s.motif || 'mort';
+  const pot = enEdition ? null : _potActuelArbre(a.id);
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('modal').innerHTML = `
+  <div class="modal-head">
+    <div class="modal-title">${enEdition?'Modifier la sortie':'Sortir de la collection'}</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="font-size:26px">${getEmoji(a.espece)}</span>
+      <div><div style="font-weight:600">${esc(a.nom||'')}</div><div style="font-size:12px;color:var(--stone)">${esc(a.num||'')} · ${esc(a.espece||'')}</div></div>
+    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--stone);margin-bottom:6px">Motif</div>
+    <div id="so-motifs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+      ${SORTIE_MOTIFS.map(m=>`<button type="button" class="btn so-motif" data-k="${m.k}" onclick="_sortieChoisir('${m.k}')" style="font-size:13px;padding:6px 12px">${m.ico} ${m.lib}</button>`).join('')}
+    </div>
+    <input type="hidden" id="so-motif" value="${motif}">
+    <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="fg"><label>Date</label><input type="date" id="so-date" value="${s.date||today}"></div>
+      <div class="fg" id="so-prix-fg"><label>Prix de vente (CHF)</label><input type="number" step="0.05" min="0" id="so-prix" value="${s.prix!=null?s.prix:''}"></div>
+      <div class="fg" id="so-dest-fg" style="grid-column:1/-1"><label id="so-dest-lib">Destinataire</label><input id="so-dest" value="${esc(s.destinataire||'')}"></div>
+      <div class="fg" style="grid-column:1/-1"><label id="so-notes-lib">Notes</label><textarea id="so-notes" rows="3">${esc(s.notes||'')}</textarea></div>
+    </div>
+    ${pot?`<div style="margin-top:12px;padding:10px 12px;background:var(--moss-light);border-radius:8px;font-size:13px">
+      <div style="font-weight:600;margin-bottom:6px">Pot en place : ${esc(pot.nom||'pot n°'+pot.id)}</div>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:4px;cursor:pointer"><input type="radio" name="so-pot" value="reste"> Il reste chez moi (redevient disponible)</label>
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="so-pot" value="part"> Il part avec l'arbre</label>
+      <input type="hidden" id="so-pot-id" value="${pot.id}">
+    </div>`:''}
+    ${enEdition?'':`<div style="font-size:12px;color:var(--stone);margin-top:12px">L'arbre quitte la collection mais rien n'est effacé : fiche, photos, documents et historique restent consultables dans « Arbres sortis », et il peut être réintégré.</div>`}
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="validerSortieArbre(${esc(_idJs(a.id))})">${enEdition?'Enregistrer':'Sortir de la collection'}</button>
+  </div>`;
+  document.getElementById('modal-overlay').style.display = 'flex';
+  _sortieChoisir(motif, true);
+}
+function _sortieChoisir(k, initial){
+  document.getElementById('so-motif').value = k;
+  document.querySelectorAll('#so-motifs .so-motif').forEach(b=>{
+    const m = _motifSortie(b.dataset.k), on = b.dataset.k===k;
+    b.style.background = on ? m.fond : '';
+    b.style.borderColor = on ? m.coul : '';
+    b.style.color = on ? m.coul : '';
+    b.style.fontWeight = on ? '600' : '';
+  });
+  const avecDest = k==='donne' || k==='vendu';
+  document.getElementById('so-dest-fg').style.display = avecDest ? '' : 'none';
+  document.getElementById('so-dest-lib').textContent = k==='vendu' ? 'Vendu à' : 'Donné à';
+  document.getElementById('so-prix-fg').style.display = k==='vendu' ? '' : 'none';
+  document.getElementById('so-notes-lib').textContent =
+    k==='mort' ? 'Cause probable / circonstances' :
+    k==='maladie' ? 'Maladie ou ravageur, traitements essayés' :
+    k==='vole' ? 'Circonstances (lieu, plainte…)' : 'Notes';
+  // Pot : par défaut il reste si l'arbre est mort, il part sinon
+  const radios = document.querySelectorAll('input[name="so-pot"]');
+  if(radios.length){
+    const def = (k==='mort' || k==='maladie') ? 'reste' : 'part';
+    radios.forEach(r=>{ r.checked = r.value===def; });
+  }
+}
+async function validerSortieArbre(id){
+  const motif = document.getElementById('so-motif').value;
+  const date = document.getElementById('so-date').value;
+  if(!date){ alert('Indiquez la date.'); return; }
+  const prixTxt = document.getElementById('so-prix').value;
+  const sortie = {
+    motif, date,
+    destinataire: (motif==='donne'||motif==='vendu') ? document.getElementById('so-dest').value.trim() : '',
+    prix: motif==='vendu' && prixTxt!=='' ? parseFloat(prixTxt) : null,
+    notes: document.getElementById('so-notes').value.trim()
+  };
+  const dejaSorti = _sortis().find(x=>String(x.id)===String(id));
+  if(dejaSorti){
+    dejaSorti.sortie = {...dejaSorti.sortie, ...sortie};
+    closeModal(); autoSave(); ouvrirArbresSortis();
+    return;
+  }
+  const a = db.arbres.find(x=>String(x.id)===String(id));
+  if(!a) return;
+  // Pot en place
+  const choixPot = document.querySelector('input[name="so-pot"]:checked');
+  const potId = document.getElementById('so-pot-id')?.value;
+  if(choixPot && potId){
+    const pot = (db.pots||[]).find(p=>String(p.id)===String(potId));
+    if(pot){
+      sortie.pot = choixPot.value; sortie.pot_id = pot.id;
+      if(choixPot.value==='reste'){ pot.statut = 'libre'; pot.arbre_id = null; }
+      else { pot.statut = motif==='vendu' ? 'vendu' : 'parti'; }
+    }
+  }
+  sortie.le = new Date().toISOString();
+  _sortis().push({...a, photos:(a.photos||[]).map(p=>({...p, dataUrl:null})), sortie});
+  db.arbres = db.arbres.filter(x=>String(x.id)!==String(id));
+  if(typeof etiqSel!=='undefined' && etiqSel && etiqSel.delete) etiqSel.delete(a.id);
+  closeModal(); closeDetail(); render(); autoSave();
+  const m = _motifSortie(motif);
+  afficherIndicateur(`${m.ico} « ${a.nom} » sorti de la collection (${m.lib.toLowerCase()})`);
+}
+
+function ouvrirArbresSortis(filtre){
+  if(filtre!==undefined) window._sortisFiltre = filtre;
+  const f = window._sortisFiltre || '';
+  const tous = _sortis().slice().sort((x,y)=>((y.sortie||{}).date||'').localeCompare((x.sortie||{}).date||''));
+  const liste = f ? tous.filter(a=>(a.sortie||{}).motif===f) : tous;
+  const nb = k => tous.filter(a=>(a.sortie||{}).motif===k).length;
+  const chip = (k, lib, n) => `<button class="flt ${f===k?'active':''}" style="width:auto;display:inline-flex;gap:6px;margin:0;border:1px solid var(--border)" onclick="ouvrirArbresSortis('${k}')">${lib} <span class="cnt">${n}</span></button>`;
+  const ligne = a => {
+    const s = a.sortie||{}, m = _motifSortie(s.motif);
+    const det = [s.destinataire ? 'à '+esc(s.destinataire) : '', s.prix!=null ? fmtCHF(s.prix) : '',
+      s.pot==='part' ? 'pot parti avec' : s.pot==='reste' ? 'pot récupéré' : ''].filter(Boolean).join(' · ');
+    const ph = (a.photos||[])[0];
+    return `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div class="so-thumb" data-arbre="${esc(String(a.id))}" data-photo="${ph?esc(String(ph.id)):''}" style="width:56px;height:56px;flex-shrink:0;border-radius:8px;background:var(--moss-light) center/cover;display:flex;align-items:center;justify-content:center;font-size:24px;filter:grayscale(.6)">${getEmoji(a.espece)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+          <span style="font-weight:600">${esc(a.nom||'')}</span>
+          <span style="font-size:11px;color:var(--stone)">${esc(a.num||'')}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${m.fond};color:${m.coul};font-weight:600">${m.ico} ${m.lib}</span>
+        </div>
+        <div style="font-size:12px;color:var(--stone)">${esc(a.espece||'')} · ${fmtDate(s.date)}${det?' · '+det:''}</div>
+        ${s.notes?`<div style="font-size:12px;margin-top:3px;white-space:pre-wrap">${esc(s.notes)}</div>`:''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+        <button class="btn" style="font-size:11px;padding:3px 8px" onclick="ouvrirSortieArbre(${esc(_idJs(a.id))})" title="Modifier la sortie">✏️</button>
+        <button class="btn" style="font-size:11px;padding:3px 8px" onclick="reintegrerArbre(${esc(_idJs(a.id))})" title="Réintégrer dans la collection">↩</button>
+        <button class="btn btn-danger" style="font-size:11px;padding:3px 8px" onclick="supprimerArbreSorti(${esc(_idJs(a.id))})" title="Supprimer définitivement">🗑️</button>
+      </div>
+    </div>`;
+  };
+  document.getElementById('modal').innerHTML = `
+  <div class="modal-head">
+    <div class="modal-title">Arbres sortis de la collection</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      ${chip('', 'Tous', tous.length)}
+      ${SORTIE_MOTIFS.map(m=>chip(m.k, m.ico+' '+m.lib, nb(m.k))).join('')}
+    </div>
+    ${liste.map(ligne).join('')}
+    ${!liste.length?`<div style="color:var(--stone);text-align:center;padding:24px 10px;font-size:13px">${tous.length?'Aucun arbre pour ce motif.':'Aucun arbre sorti pour l\'instant.<br><br>Pour sortir un arbre mort, éliminé, donné, vendu ou volé : ouvrez sa fiche puis « 🚪 Sortir ».'}</div>`:''}
+  </div>
+  <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Fermer</button></div>`;
+  document.getElementById('modal-overlay').style.display = 'flex';
+  // Vignettes chargées depuis IndexedDB
+  document.querySelectorAll('#modal .so-thumb').forEach(async el=>{
+    if(!el.dataset.photo) return;
+    try{
+      const u = await idbLirePhoto(el.dataset.arbre.match(/^\d+$/) ? Number(el.dataset.arbre) : el.dataset.arbre, el.dataset.photo.match(/^\d+$/) ? Number(el.dataset.photo) : el.dataset.photo);
+      if(u){ el.style.backgroundImage = `url("${u}")`; el.textContent = ''; }
+    }catch(_){}
+  });
+}
+
+async function reintegrerArbre(id){
+  const a = _sortis().find(x=>String(x.id)===String(id));
+  if(!a) return;
+  if(!confirm(`Réintégrer « ${a.nom} » dans la collection ?`)) return;
+  const s = a.sortie || {};
+  db.arbres_sortis = _sortis().filter(x=>String(x.id)!==String(id));
+  const retour = {...a}; delete retour.sortie;
+  // Le pot récupéré (encore libre) reprend sa place
+  if(s.pot==='reste' && s.pot_id!=null){
+    const pot = (db.pots||[]).find(p=>p.id===s.pot_id);
+    if(pot && pot.statut==='libre'){ pot.statut='utilisé'; pot.arbre_id=a.id; }
+  }
+  for(const p of (retour.photos||[])){
+    try{ p.dataUrl = await idbLirePhoto(retour.id, p.id) || null; }catch(_){ p.dataUrl = null; }
+  }
+  db.arbres.push(retour);
+  closeModal(); render(); autoSave();
+  afficherIndicateur(`↩ « ${a.nom} » est de retour dans la collection`);
+}
+
+function supprimerArbreSorti(id){
+  const a = _sortis().find(x=>String(x.id)===String(id));
+  if(!a) return;
+  if(!confirm(`Supprimer définitivement « ${a.nom} » ?\n\nSa fiche, ses photos et ses documents seront effacés. Cette action est irréversible.`)) return;
+  if((a.documents||[]).length) docIdbSupprimerArbre(a.id, a.documents);
+  try{ idbSupprimerToutesPhotosArbre(a.id); }catch(_){}
+  db.arbres_sortis = _sortis().filter(x=>String(x.id)!==String(id));
+  autoSave(); ouvrirArbresSortis(); updateSidebar();
+}
+
+function _statsSortiesCard(){
+  const tous = _sortis();
+  const annee = String(new Date().getFullYear());
+  const ventes = tous.filter(a=>(a.sortie||{}).motif==='vendu').reduce((s,a)=>s+((a.sortie||{}).prix||0),0);
+  return `<div class="stats-card">
+      <div class="stats-card-title">Sorties de la collection</div>
+      ${SORTIE_MOTIFS.map(m=>{ const n = tous.filter(a=>(a.sortie||{}).motif===m.k).length;
+        return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span>${m.ico} ${m.lib}</span><span style="font-weight:600;color:${m.coul}">${n}</span></div>`; }).join('')}
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--stone)">
+        ${tous.filter(a=>((a.sortie||{}).date||'').startsWith(annee)).length} cette année${ventes?` · ventes ${fmtCHF(ventes)}`:''}
+      </div>
+      <button class="btn" style="margin-top:10px;width:100%" onclick="ouvrirArbresSortis('')">🕯️ Voir les arbres sortis</button>
+    </div>`;
 }
 
 function scoreCompletudeArbre(a){
@@ -5161,7 +5407,7 @@ function renderRempotages(c){
   }
 
   remp.forEach(r=>{
-    const arbre = db.arbres.find(a=>a.id===r.arbre_id);
+    const arbre = db.arbres.find(a=>a.id===r.arbre_id) || (db.arbres_sortis||[]).find(a=>a.id===r.arbre_id);
     const pot = db.pots.find(p=>p.id===r.pot_id);
     const mel = db.melanges.find(m=>m.id===r.melange_id);
     const prixLitre = mel ? calculPrixLitreMelange(mel) : 0;
@@ -5172,7 +5418,7 @@ function renderRempotages(c){
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
             <span style="font-size:22px">${arbre?getEmoji(arbre.espece):'🌿'}</span>
             <div>
-              <div style="font-weight:500;font-size:14px">${arbre?arbre.nom:'Arbre supprimé'}</div>
+              <div style="font-weight:500;font-size:14px">${arbre?arbre.nom+(arbre.sortie?' <span style="font-size:11px;color:var(--stone)">(sorti)</span>':''):'Arbre supprimé'}</div>
               <div style="font-size:11px;color:var(--stone)">📅 ${fmtDate(r.date)}</div>
             </div>
             ${pot?`<span style="margin-left:auto;font-size:11px;background:var(--stone-light);padding:2px 8px;border-radius:8px;color:var(--stone)">⬛ ${pot.nom}</span>`:''}
@@ -5205,7 +5451,7 @@ function potCardHtml(p){
     <div class="pot-card-img">
       ${cover?`<img src="${cover.dataUrl}" alt="${p.nom}" onclick="event.stopPropagation();ouvrirLightboxPot(${p.id},0)" style="cursor:zoom-in">`:`<span style="font-size:44px">${typeSupport(p).k==='pot'?'⬛':typeSupport(p).icone}</span>`}
       ${typeSupport(p).k!=='pot'?`<div style="position:absolute;top:8px;left:8px;background:rgba(255,255,255,.9);font-size:10px;padding:2px 7px;border-radius:8px">${typeSupport(p).icone} ${typeSupport(p).lib}</div>`:''}
-      <div style="position:absolute;top:8px;right:8px"><span class="pot-status-badge ${p.statut==='libre'?'pot-libre':p.statut==='cassé'?'pot-casse':p.statut==='vendu'?'pot-vendu':'pot-utilise'}">${p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':'En service'}</span></div>
+      <div style="position:absolute;top:8px;right:8px"><span class="pot-status-badge ${p.statut==='libre'?'pot-libre':p.statut==='cassé'?'pot-casse':p.statut==='vendu'||p.statut==='parti'?'pot-vendu':'pot-utilise'}">${p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':p.statut==='parti'?'Parti avec l\'arbre':'En service'}</span></div>
       ${photos.length>1?`<div style="position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.5);color:#fff;font-size:10px;padding:2px 6px;border-radius:8px">📷 ${photos.length}</div>`:''}
       ${!selMode?`<div style="position:absolute;bottom:6px;right:6px"><button class="btn" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,.9)" onclick="event.stopPropagation();dupliquerPot(${p.id})" title="Dupliquer ce pot">⧉ Dupliquer</button></div>`:''}
     </div>
@@ -5333,7 +5579,7 @@ function renderPots(c){
         <button class="btn" style="border:none;border-radius:0;${vue==='groupe'?'background:var(--moss);color:#fff':''}" onclick="state.potVue='groupe';renderAtelier(document.getElementById('content'))">☰ Par fabricant / type</button>
       </div>
       <select class="trav-sel" onchange="state.potFlt=this.value;renderAtelier(document.getElementById('content'))">
-        <option value="">Tous les statuts</option><option value="libre">Disponibles</option><option value="utilisé">En service</option><option value="cassé">Cassés</option><option value="vendu">Vendus</option>
+        <option value="">Tous les statuts</option><option value="libre">Disponibles</option><option value="utilisé">En service</option><option value="cassé">Cassés</option><option value="vendu">Vendus</option><option value="parti">Partis avec un arbre</option>
       </select>
       <button class="btn ${selMode?'btn-primary':''}" onclick="togglePotSelectMode()">${selMode?'✕ Annuler sélection':'☑ Sélectionner plusieurs'}</button>
       <button class="btn btn-primary" onclick="openPotModal(0)">＋ Nouveau pot / lauze</button>
@@ -6589,7 +6835,7 @@ function openPotModal(id, fromRemp=false, prefill=null){
     <div class="form-row">
       <div class="fg"><label>Matière</label><select id="p-mat" onchange="document.getElementById('p-mat-autre-wrap').style.display=this.value==='__autre'?'block':'none';if(this.value==='__autre')setTimeout(()=>document.getElementById('p-mat-autre').focus(),50)">${optionsMatieres(typeK, (pv.matiere||'').trim())}</select>
         <div id="p-mat-autre-wrap" style="display:none;margin-top:6px"><input id="p-mat-autre" placeholder="Ex: Lave du Vésuve, Corten…"></div></div>
-      <div class="fg"><label>Statut</label><select id="p-statut"><option value="libre" ${!isEdit||p.statut==='libre'?'selected':''}>Disponible</option><option value="utilisé" ${isEdit&&p.statut==='utilisé'?'selected':''}>En service</option><option value="cassé" ${isEdit&&p.statut==='cassé'?'selected':''}>Cassé</option><option value="vendu" ${isEdit&&p.statut==='vendu'?'selected':''}>Vendu</option></select></div>
+      <div class="fg"><label>Statut</label><select id="p-statut"><option value="libre" ${!isEdit||p.statut==='libre'?'selected':''}>Disponible</option><option value="utilisé" ${isEdit&&p.statut==='utilisé'?'selected':''}>En service</option><option value="cassé" ${isEdit&&p.statut==='cassé'?'selected':''}>Cassé</option><option value="vendu" ${isEdit&&p.statut==='vendu'?'selected':''}>Vendu</option><option value="parti" ${isEdit&&p.statut==='parti'?'selected':''}>Parti avec un arbre</option></select></div>
     </div>
     ${(()=>{
       if(!isEdit) return '';
@@ -7716,6 +7962,7 @@ function dbToCleanObj(){
     produits: db.produits||[],
     especes: db.especes||[],
     especesSupprimees: db.especesSupprimees||[],
+    arbres_sortis: _sortisLeger(),
     cultivars: db.cultivars||[]
   };
 }
@@ -7900,7 +8147,7 @@ async function exporterParLots(maxMB=30, exportMaxPx=800, exportQualite=0.80){
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
     pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(), cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
   };
   const headerBytes = JSON.stringify(headerBase).length;
 
@@ -7988,7 +8235,7 @@ function sauvegarderJSON(){
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(),
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger,
       _note:'Photos (arbres et pots) stockées dans IndexedDB du navigateur. Utilisez "Export photos" pour une sauvegarde complète.'
     });
@@ -8044,7 +8291,7 @@ async function exporterAvecPhotos(){
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(),
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
     };
     await write(JSON.stringify(header).slice(0,-1) + ',"arbres":[');
@@ -8082,7 +8329,7 @@ async function exporterAvecPhotosBlob(){
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
     pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(),
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[]
   };
   parts.push(JSON.stringify(header).slice(0,-1)+',"arbres":[');
@@ -8148,7 +8395,7 @@ async function sauvegarderLocal(){
       pots:potsLeger, substrats:db.substrats||[],
       melanges:db.melanges||[], rempotages:db.rempotages||[],
       engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(),
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[],
       arbres:arbresLeger
     });
@@ -8436,7 +8683,7 @@ async function chargerLots(files){
       if(c.engrais) db.engrais=c.engrais;
       if(c.produits) db.produits=c.produits;
       if(c.especes) db.especes=c.especes;
-      if(c.especesSupprimees) db.especesSupprimees=c.especesSupprimees;
+      if(c.especesSupprimees) db.especesSupprimees=c.especesSupprimees; db.arbres_sortis = Array.isArray(c.arbres_sortis) ? c.arbres_sortis : (db.arbres_sortis||[]); _dedoublonnerSortis();
       if(c.cultivars) db.cultivars=c.cultivars;
       if(c.travaux_types) db.travaux_types=c.travaux_types;
       if(c.nextId) db.nextId=c.nextId;
@@ -8565,7 +8812,7 @@ async function _chargerCollection(collection, preserverPhotos=false){
   if(collection.engrais) db.engrais=collection.engrais;
   if(collection.produits) db.produits=collection.produits;
   if(collection.especes) db.especes=collection.especes;
-  if(collection.especesSupprimees) db.especesSupprimees=collection.especesSupprimees;
+  if(collection.especesSupprimees) db.especesSupprimees=collection.especesSupprimees; db.arbres_sortis = Array.isArray(collection.arbres_sortis) ? collection.arbres_sortis : (db.arbres_sortis||[]); _dedoublonnerSortis();
   if(collection.cultivars) db.cultivars=collection.cultivars;
   if(collection.travaux_types) db.travaux_types=collection.travaux_types;
   if(collection.nextPotId) db.nextPotId=collection.nextPotId;
@@ -9142,7 +9389,7 @@ async function initialiser(){
         if(collection.engrais) db.engrais = collection.engrais;
         if(collection.produits) db.produits = collection.produits;
         if(collection.especes) db.especes = collection.especes;
-        if(collection.especesSupprimees) db.especesSupprimees = collection.especesSupprimees;
+        if(collection.especesSupprimees) db.especesSupprimees = collection.especesSupprimees; db.arbres_sortis = Array.isArray(collection.arbres_sortis) ? collection.arbres_sortis : (db.arbres_sortis||[]); _dedoublonnerSortis();
       if(collection.cultivars) db.cultivars = collection.cultivars;
         if(collection.travaux_types) db.travaux_types = collection.travaux_types;
         if(collection.nextPotId) db.nextPotId = collection.nextPotId;
@@ -10363,8 +10610,9 @@ function _appliquerCollectionSync(c){
   (db.pots||[]).forEach(pt=>(pt.photos||[]).forEach(p=>{ if(p.dataUrl) urls.set(_photoKey('pot_'+pt.id,p.id), p.dataUrl); }));
   db.arbres = (c.arbres||[]).map(a=>({...a, photos:(a.photos||[]).map(p=>({...p, dataUrl: urls.get(_photoKey(a.id,p.id))||null}))}));
   db.pots = (c.pots||[]).map(pt=>({...pt, photos:(pt.photos||[]).map(p=>({...p, dataUrl: urls.get(_photoKey('pot_'+pt.id,p.id))||null}))}));
-  ['substrats','melanges','rempotages','engrais','produits','especes','especesSupprimees','cultivars','travaux_types']
+  ['substrats','melanges','rempotages','engrais','produits','especes','especesSupprimees','arbres_sortis','cultivars','travaux_types']
     .forEach(k=>{ if(Array.isArray(c[k])) db[k] = c[k]; });
+  _dedoublonnerSortis();
   ['nextId','nextPotId','nextSubId','nextMelId','nextRempId','nextEngId','nextProdId']
     .forEach(k=>{ db[k] = Math.max(Number(db[k])||1, Number(c[k])||1); });
   try{ if(typeof reconstruireCollectionsPots==='function') reconstruireCollectionsPots(); }catch(_){}
@@ -10386,7 +10634,7 @@ function _rafraichirApresSync(){
 // ── Médias (photos + documents) ───────────────────────────────────────────────
 function _mediaReferences(c){
   const out = [];
-  (c.arbres||[]).forEach(a=>{
+  [...(c.arbres||[]), ...(c.arbres_sortis||[])].forEach(a=>{
     (a.photos||[]).forEach(p=>out.push('ph:'+_photoKey(a.id,p.id)));
     (a.documents||[]).forEach(d=>out.push('doc:'+_docKey(a.id,d.id)));
   });
@@ -10912,7 +11160,7 @@ function _feuillesExport(){
   db.arbres.forEach(a=>getSoinsPlanifies(a).forEach(s=>soins.push({'Date prévue':s.date||'', 'N°':a.num||'', 'Arbre':a.nom||'', 'Type':s.type||'', 'Notes':s.notes||''})));
   soins.sort((x,y)=>x['Date prévue'].localeCompare(y['Date prévue']));
   const pots = (db.pots||[]).map(p=>({'Nom':p.nom||'', 'Type':(TYPES_SUPPORT.find(t=>t.k===(p.type_support||'pot'))||{}).lib||'', 'Forme':p.forme||'', 'Matière':p.matiere||'',
-    'Statut':p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':'En service',
+    'Statut':p.statut==='libre'?'Disponible':p.statut==='cassé'?'Cassé':p.statut==='vendu'?'Vendu':p.statut==='parti'?'Parti avec un arbre':'En service',
     'Longueur':+p.long||'', 'Largeur':+p.larg||'', 'Hauteur':+p.haut||'', 'Poids (kg)':+p.poids||'', 'Prix (CHF)':+p.prix||0,
     "Date d'achat":p.date_acq||'', 'Fabricant / fournisseur':p.fournisseur||'', 'Provenance':p.provenance||'', 'Collection':p.collection||'', 'Notes':p.notes||''}));
   const remp = (db.rempotages||[]).map(r=>{ const a=db.arbres.find(x=>x.id===r.arbre_id); const mel=db.melanges.find(x=>x.id===r.melange_id);
@@ -10926,7 +11174,12 @@ function _feuillesExport(){
     ...(db.engrais||[]).map(x=>({'Catégorie':'Engrais','Nom':x.nom,'Marque':x.marque||'','Stock':(x.nb_unites||0)+' '+(x.unite||''),'Prix':(x.prix_unite||0)+' CHF / '+(x.unite||'unité')})),
     ...(db.produits||[]).map(x=>({'Catégorie':'Traitement','Nom':x.nom,'Marque':x.marque||'','Stock':(x.nb_unites||0)+' '+(x.unite||''),'Prix':(x.prix_unite||0)+' CHF / '+(x.unite||'unité')})),
   ];
-  return [['Arbres',arbres],['Travaux',travaux],['Soins planifiés',soins],['Rempotages',remp],['Pots',pots],['Santé',sante],['Stocks',stocks]];
+  const sortis = (db.arbres_sortis||[]).map(a=>{ const so=a.sortie||{};
+    return {'Date de sortie':so.date||'', 'Motif':_motifSortie(so.motif).lib, 'N°':a.num||'', 'Nom':a.nom||'', 'Espèce':a.espece||'', 'Origine':a.origine||'',
+      "Date d'acquisition":a.date_acq||'', 'Destinataire':so.destinataire||'', 'Prix de vente (CHF)':so.prix!=null?so.prix:'',
+      'Pot':so.pot==='part'?'Parti avec l\'arbre':so.pot==='reste'?'Récupéré':'', 'Notes de sortie':so.notes||''}; })
+    .sort((x,y)=>y['Date de sortie'].localeCompare(x['Date de sortie']));
+  return [['Arbres',arbres],['Arbres sortis',sortis],['Travaux',travaux],['Soins planifiés',soins],['Rempotages',remp],['Pots',pots],['Santé',sante],['Stocks',stocks]];
 }
 async function exporterExcel(){
   try{
@@ -11133,7 +11386,7 @@ async function dropboxSauvegarder(){
       nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
       pots:db.pots||[], substrats:db.substrats||[], melanges:db.melanges||[],
       rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+      especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(),
       cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger,
       _note:'Synchronisation Dropbox — sans photos'
     });
@@ -11220,7 +11473,7 @@ function _buildSyncPayloadRaw(){
     nextRempId:db.nextRempId||1, nextEngId:db.nextEngId||1, nextProdId:db.nextProdId||1,
     pots:potsLeger, substrats:db.substrats||[], melanges:db.melanges||[],
     rempotages:db.rempotages||[], engrais:db.engrais||[], produits:db.produits||[],
-    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[],
+    especes:db.especes||[], especesSupprimees:db.especesSupprimees||[], arbres_sortis:_sortisLeger(),
     cultivars:db.cultivars||[], travaux_types:db.travaux_types||[], arbres:arbresLeger
   };
   return raw;
