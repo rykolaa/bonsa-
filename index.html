@@ -3319,6 +3319,7 @@ function openDetail(id){
         <div class="info-block"><div class="info-block-label">Ø Houppier</div><div class="info-block-val">${a.diam_houppier} cm</div></div>
         <div class="info-block"><div class="info-block-label">Ø Nébari</div><div class="info-block-val">${a.diam_nebari} cm</div></div>
       </div>
+      ${_sujetsFicheHtml(a)}
 
       <!-- Historique des mensurations -->
       <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between">
@@ -3489,6 +3490,121 @@ function _showTooltip(e, html){
 function closeDetail(){document.getElementById('detail-overlay').style.display='none';}
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
+// ── PLUSIEURS ARBRES DANS UN POT (forêt, multitronc, radeau, groupe…) ────────
+// a.sujets = [{id, nom, hauteur, diam_tronc, diam_nebari, notes}]
+// Les mensurations principales de la fiche restent celles de l'ensemble
+// (hauteur de la composition → catégorie de taille).
+function _sujetHtml(s, i){
+  const v = x => (x!=null && x!=='' && x!==0) ? x : '';
+  return `<div class="sujet-row" data-id="${esc(String(s.id||''))}" style="display:grid;grid-template-columns:20px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) 26px;gap:6px;align-items:center;margin-bottom:5px">
+    <span class="sujet-n" style="font-size:11px;color:var(--stone);text-align:right">${i+1}</span>
+    <input class="sj-nom" style="width:100%;min-width:0;box-sizing:border-box" value="${esc(s.nom||'')}" placeholder="Repère">
+    <input class="sj-h" style="width:100%;min-width:0;box-sizing:border-box" type="number" step="0.5" min="0" value="${v(s.hauteur)}" placeholder="Haut. cm" oninput="_sujetsResume()">
+    <input class="sj-dt" style="width:100%;min-width:0;box-sizing:border-box" type="number" step="0.1" min="0" value="${v(s.diam_tronc)}" placeholder="Ø tronc" oninput="_sujetsResume()">
+    <input class="sj-dn" style="width:100%;min-width:0;box-sizing:border-box" type="number" step="0.1" min="0" value="${v(s.diam_nebari)}" placeholder="Ø nébari">
+    <button type="button" class="btn" style="padding:2px 6px;font-size:12px" title="Retirer" onclick="this.closest('.sujet-row').remove();_sujetsRenum()">✕</button>
+  </div>`;
+}
+function _sujetsFormHtml(a){
+  const sj = (a && a.sujets) || [];
+  return `<div id="f-sujets-wrap" style="margin:4px 0 12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:#fbfaf7">
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--moss)">
+      <input type="checkbox" id="f-sujets-on" ${sj.length?'checked':''} onchange="_sujetsToggle()"> 🌲 Plusieurs arbres dans ce pot (forêt, multitronc, radeau…)
+    </label>
+    <div id="f-sujets-body" style="display:${sj.length?'block':'none'};margin-top:10px">
+      <div style="font-size:11px;color:var(--stone);margin-bottom:8px">Les mensurations ci-dessus sont celles de <b>l'ensemble</b> (la hauteur fixe la catégorie de taille). Ici, celles de <b>chaque arbre</b>.</div>
+      <div style="display:grid;grid-template-columns:20px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) 26px;gap:6px;font-size:10px;color:var(--stone);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">
+        <span></span><span>Repère</span><span>Hauteur (cm)</span><span>Ø tronc (cm)</span><span>Ø nébari (cm)</span><span></span></div>
+      <div id="f-sujets-list">${sj.map(_sujetHtml).join('')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button type="button" class="btn" style="font-size:12px;padding:4px 10px" onclick="_sujetsAjouter(1)">＋ Ajouter un arbre</button>
+        <button type="button" class="btn" style="font-size:12px;padding:4px 10px" onclick="_sujetsAjouterPlusieurs()">＋ Ajouter plusieurs…</button>
+        <button type="button" class="btn" style="font-size:12px;padding:4px 10px" onclick="_sujetsVersEnsemble()" title="Hauteur et Ø tronc de l'ensemble = ceux du plus grand arbre">⬆ Reporter le plus grand dans l'ensemble</button>
+      </div>
+      <div id="f-sujets-resume" style="font-size:12px;color:var(--moss);margin-top:8px"></div>
+    </div>
+  </div>`;
+}
+function _sujetsToggle(){
+  const on = document.getElementById('f-sujets-on').checked;
+  document.getElementById('f-sujets-body').style.display = on ? 'block' : 'none';
+  if(on && !document.querySelectorAll('#f-sujets-list .sujet-row').length) _sujetsAjouter(2);
+  _sujetsResume();
+}
+function _sujetsAjouter(n){
+  const list = document.getElementById('f-sujets-list'); if(!list) return;
+  for(let k=0;k<n;k++){
+    const i = list.querySelectorAll('.sujet-row').length;
+    list.insertAdjacentHTML('beforeend', _sujetHtml({id:'sj'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), nom:''}, i));
+  }
+  _sujetsRenum();
+}
+function _sujetsAjouterPlusieurs(){
+  const t = prompt('Combien d\'arbres ajouter ?', '5');
+  if(t===null) return;
+  const n = Math.min(200, parseInt(t)||0);
+  if(n>0) _sujetsAjouter(n);
+}
+function _sujetsRenum(){
+  document.querySelectorAll('#f-sujets-list .sujet-row').forEach((r,i)=>{ const s=r.querySelector('.sujet-n'); if(s) s.textContent=i+1; });
+  _sujetsResume();
+}
+function _sujetsLire(){
+  if(!document.getElementById('f-sujets-on')?.checked) return [];
+  return [...document.querySelectorAll('#f-sujets-list .sujet-row')].map((r,i)=>({
+    id: r.dataset.id || ('sj'+Date.now().toString(36)+i),
+    nom: r.querySelector('.sj-nom').value.trim(),
+    hauteur: parseFloat(r.querySelector('.sj-h').value)||0,
+    diam_tronc: parseFloat(r.querySelector('.sj-dt').value)||0,
+    diam_nebari: parseFloat(r.querySelector('.sj-dn').value)||0
+  }));
+}
+function _sujetsStats(sj){
+  const hs = sj.map(s=>s.hauteur).filter(x=>x>0), ds = sj.map(s=>s.diam_tronc).filter(x=>x>0);
+  const moy = arr => arr.length ? Math.round(arr.reduce((s,x)=>s+x,0)/arr.length*10)/10 : null;
+  return {n:sj.length, hMax:hs.length?Math.max(...hs):null, hMin:hs.length?Math.min(...hs):null, hMoy:moy(hs), dMax:ds.length?Math.max(...ds):null, dMoy:moy(ds)};
+}
+function _sujetsResume(){
+  const el = document.getElementById('f-sujets-resume'); if(!el) return;
+  const sj = _sujetsLire(); if(!sj.length){ el.textContent=''; return; }
+  const st = _sujetsStats(sj);
+  el.innerHTML = `${st.n} arbre${st.n>1?'s':''}${st.hMax?` · hauteur ${st.hMin}–${st.hMax} cm (moy. ${st.hMoy})`:''}${st.dMax?` · Ø tronc max ${st.dMax} cm (moy. ${st.dMoy})`:''}`;
+}
+function _sujetsVersEnsemble(){
+  const st = _sujetsStats(_sujetsLire());
+  if(st.hMax) document.getElementById('f-h').value = st.hMax;
+  if(st.dMax) document.getElementById('f-dt').value = st.dMax;
+}
+// Copie légère pour l'historique des mesures
+function _sujetsSnap(sj){ return (sj||[]).map(s=>({id:s.id, nom:s.nom, hauteur:s.hauteur, diam_tronc:s.diam_tronc, diam_nebari:s.diam_nebari})); }
+
+// Bloc de la fiche
+function _sujetsFicheHtml(a){
+  const sj = a.sujets||[]; if(!sj.length) return '';
+  const st = _sujetsStats(sj);
+  // mesure précédente contenant les sujets (pour l'évolution)
+  const hist = (a.mesures||[]).filter(m=>m.sujets&&m.sujets.length).sort((x,y)=>y.date.localeCompare(x.date));
+  const prev = hist.find(m=>JSON.stringify(_sujetsSnap(m.sujets))!==JSON.stringify(_sujetsSnap(sj))) || null;
+  const diff = (s,k)=>{
+    if(!prev) return '';
+    const p = prev.sujets.find(x=>String(x.id)===String(s.id)); if(!p||!p[k]||!s[k]) return '';
+    const d = Math.round((s[k]-p[k])*10)/10; if(!d) return '';
+    return `<span style="color:${d>0?'#2d5a27':'#b42814'};font-size:9px;margin-left:2px">${d>0?'+':''}${d}</span>`;
+  };
+  const c = x => x ? x+' cm' : '—';
+  return `<div style="margin-top:10px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+    <div style="padding:7px 10px;background:var(--moss-light);font-size:12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <b style="color:var(--moss)">🌲 ${st.n} arbre${st.n>1?'s':''} dans ce pot</b>
+      <span style="color:var(--stone)">${st.hMax?`haut. ${st.hMin}–${st.hMax} cm · moy. ${st.hMoy}`:''}${st.dMax?` · Ø tronc max ${st.dMax}`:''}</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:var(--sand-light)"><th style="padding:4px 8px;text-align:left">#</th><th style="padding:4px 6px;text-align:left">Repère</th><th style="padding:4px 6px;text-align:right">Hauteur</th><th style="padding:4px 6px;text-align:right">Ø tronc</th><th style="padding:4px 8px;text-align:right">Ø nébari</th></tr></thead>
+      <tbody>${sj.map((s,i)=>`<tr style="border-top:1px solid var(--border)"><td style="padding:4px 8px;color:var(--stone)">${i+1}</td><td style="padding:4px 6px">${esc(s.nom||'')}</td><td style="padding:4px 6px;text-align:right">${c(s.hauteur)}${diff(s,'hauteur')}</td><td style="padding:4px 6px;text-align:right">${c(s.diam_tronc)}${diff(s,'diam_tronc')}</td><td style="padding:4px 8px;text-align:right">${c(s.diam_nebari)}${diff(s,'diam_nebari')}</td></tr>`).join('')}</tbody>
+    </table>
+    ${prev?`<div style="font-size:10px;color:var(--stone);padding:4px 8px;border-top:1px solid var(--border)">Évolution depuis le ${fmtDate(prev.date)}</div>`:''}
+  </div>`;
+}
+
 function openAddModal(){showArbreModal(null)}
 function openEditModal(id){showArbreModal(db.arbres.find(a=>a.id===id))}
 
@@ -3570,6 +3686,7 @@ function showArbreModal(a){
         </div>
       </div>
     </div>
+    ${_sujetsFormHtml(isEdit?a:null)}
     <div class="form-section">Provenance & acquisition</div>
     <div class="form-row">
       <div class="fg"><label>Origine</label><select id="f-ori" onchange="majChampsOrigine(this.value)">${ORIGINES.map(o=>`<option ${isEdit&&a.origine===o?'selected':''}>${o}</option>`).join('')}</select></div>
@@ -3639,6 +3756,7 @@ function showArbreModal(a){
   </div>`;
   document.getElementById('modal-overlay').style.display='flex';
   setTimeout(updateStylePreview, 0);
+  _sujetsResume();
 }
 
 function ajouterSoinFormItem(){
@@ -3740,20 +3858,22 @@ function saveArbre(id){
     type_soin: (()=>{ try{ const s=JSON.parse(document.getElementById('f-soins-json')?.value||'[]'); return s[0]?.type||''; }catch(e){return '';} })(),
     prochain_soin: (()=>{ try{ const s=JSON.parse(document.getElementById('f-soins-json')?.value||'[]').sort((a,b)=>a.date.localeCompare(b.date)); return s[0]?.date||''; }catch(e){return '';} })(),
     soins_planifies: (()=>{ try{ return JSON.parse(document.getElementById('f-soins-json')?.value||'[]'); }catch(e){return [];} })(),
-    notes:document.getElementById('f-notes').value
+    notes:document.getElementById('f-notes').value,
+    sujets:_sujetsLire()
   };
   if(id){
     const existing = db.arbres.find(a=>a.id===id);
     // Enregistrer une entrée d'historique si les mensurations ont changé
     const fields = ['hauteur','diam_tronc','diam_houppier','diam_nebari'];
-    const changed = fields.some(f => existing[f] !== data[f]);
-    const vide = fields.every(f=>!data[f]);   // champs vidés : pas de ligne « 0 cm » dans l'historique
+    const changed = fields.some(f => existing[f] !== data[f]) || JSON.stringify(_sujetsSnap(existing.sujets))!==JSON.stringify(_sujetsSnap(data.sujets));
+    const vide = fields.every(f=>!data[f]) && !data.sujets.length;   // champs vidés : pas de ligne « 0 cm » dans l'historique
     if(changed && !vide){
       if(!existing.mesures) existing.mesures = [];
       const today = new Date().toISOString().split('T')[0];
       // Remplacer l'entrée du jour si elle existe déjà
       const idx = existing.mesures.findIndex(m=>m.date===today);
       const entry = {date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari};
+      if(data.sujets.length) entry.sujets = _sujetsSnap(data.sujets);
       if(idx>=0) existing.mesures[idx] = entry;
       else existing.mesures.unshift(entry);
     }
@@ -3765,7 +3885,7 @@ function saveArbre(id){
     // Sauvegarder la mesure initiale
     const today = new Date().toISOString().split('T')[0];
     // Première mesure seulement si au moins une mensuration a été saisie
-    if(data.hauteur||data.diam_tronc||data.diam_houppier||data.diam_nebari) data.mesures.push({date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari});
+    if(data.hauteur||data.diam_tronc||data.diam_houppier||data.diam_nebari) { const _m={date:today, hauteur:data.hauteur, diam_tronc:data.diam_tronc, diam_houppier:data.diam_houppier, diam_nebari:data.diam_nebari}; if(data.sujets.length) _m.sujets=_sujetsSnap(data.sujets); data.mesures.push(_m); }
     db.arbres.push(data);
     closeModal();
   }
@@ -5229,6 +5349,7 @@ function enregistrerMesures(arbreId){
   if(!a.mesures) a.mesures = [];
   const today = new Date().toISOString().split('T')[0];
   const entry = {date:today, hauteur:a.hauteur, diam_tronc:a.diam_tronc, diam_houppier:a.diam_houppier, diam_nebari:a.diam_nebari};
+  if((a.sujets||[]).length) entry.sujets = _sujetsSnap(a.sujets);
   const idx = a.mesures.findIndex(m=>m.date===today);
   if(idx>=0){ a.mesures[idx]=entry; }
   else { a.mesures.unshift(entry); }
@@ -11375,6 +11496,7 @@ function _feuillesExport(){
       'Coût total investi (CHF)': Math.round((calculCoutArbre(a)?.total||0)*100)/100,
       'Pot actuel': potDe(a.id), 'Prochain soin': prochain?`${prochain.type} — ${prochain.date}`:'',
       'Photos': (a.photos||[]).length, 'Documents': (a.documents||[]).length, 'Travaux': (a.travaux||[]).length,
+      'Arbres dans le pot': (a.sujets||[]).length||'',
       'Altitude': a.alt||'', 'GPS': a.gps||'', 'Notes': a.notes||''
     };
   });
@@ -11404,7 +11526,10 @@ function _feuillesExport(){
       "Date d'acquisition":a.date_acq||'', 'Destinataire':so.destinataire||'', 'Prix de vente (CHF)':so.prix!=null?so.prix:'',
       'Pot':so.pot==='part'?'Parti avec l\'arbre':so.pot==='reste'?'Récupéré':'', 'Notes de sortie':so.notes||''}; })
     .sort((x,y)=>y['Date de sortie'].localeCompare(x['Date de sortie']));
-  return [['Arbres',arbres],['Arbres sortis',sortis],['Travaux',travaux],['Soins planifiés',soins],['Rempotages',remp],['Pots',pots],['Santé',sante],['Stocks',stocks]];
+  const sujetsF = [];
+  db.arbres.forEach(a=>(a.sujets||[]).forEach((x,i)=>sujetsF.push({'N°':a.num||'', 'Pot / composition':a.nom||'', '#':i+1, 'Repère':x.nom||'',
+    'Hauteur (cm)':+x.hauteur||'', 'Ø tronc (cm)':+x.diam_tronc||'', 'Ø nébari (cm)':+x.diam_nebari||''})));
+  return [['Arbres',arbres],['Arbres du pot',sujetsF],['Arbres sortis',sortis],['Travaux',travaux],['Soins planifiés',soins],['Rempotages',remp],['Pots',pots],['Santé',sante],['Stocks',stocks]];
 }
 async function exporterExcel(){
   try{
