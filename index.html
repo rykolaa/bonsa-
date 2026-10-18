@@ -3739,7 +3739,7 @@ function openTravailModal(arbreId, travailIdx){
     <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
   </div>
   <div class="modal-body">
-    ${!singleArbre?`<div class="fg" style="margin-bottom:12px"><label>Arbre concerné *</label><select id="f-tarbre" onchange="updateTravailPhotos()">${db.arbres.map(x=>`<option value="${x.id}">${getEmoji(x.espece)} ${x.nom}</option>`).join('')}</select></div>`:'<input type="hidden" id="f-tarbre" value="'+arbreId+'">'}
+    ${!singleArbre?`<div class="fg" style="margin-bottom:12px"><label>Arbre concerné *</label><select id="f-tarbre" onchange="updateTravailPhotos();majCoutTravail()">${db.arbres.map(x=>`<option value="${x.id}">${getEmoji(x.espece)} ${x.nom}</option>`).join('')}</select></div>`:'<input type="hidden" id="f-tarbre" value="'+arbreId+'">'}
     <div class="form-row">
       <div class="fg"><label>Type de travail *</label>
         <select id="f-ttype" onchange="toggleRempotageFields();majCoutTravail()">
@@ -3752,8 +3752,9 @@ function openTravailModal(arbreId, travailIdx){
       <textarea id="f-tdesc" rows="2" placeholder="Décrivez le travail effectué…">${trav?trav.desc||'':''}</textarea>
     </div></div>
     <div class="form-row">
-      <div class="fg"><label>Coût (CHF)</label><input id="f-tcout" type="number" value="${trav?trav.cout||0:0}" min="0"></div>
+      <div class="fg"><label>Coût (CHF)</label><input id="f-tcout" type="number" value="${trav?trav.cout||0:0}" min="0" oninput="this.dataset.auto='0'"></div>
     </div>
+    <div id="f-tcout-hint" style="font-size:12px;color:var(--moss);margin:-6px 0 10px"></div>
 
     <!-- CHAMPS REMPOTAGE — liés à l'Atelier -->
     <div id="rempotage-fields" style="display:none">
@@ -5024,8 +5025,12 @@ function majCoutTravail(){
   const arbreIdField = document.getElementById('f-tarbre');
   if(!typeSel || !coutField) return;
 
-  // Ne pas écraser un coût déjà saisi manuellement (> 0)
-  if(parseFloat(coutField.value) > 0) return;
+  // Indice « d'où vient ce montant »
+  { const aa = db.arbres.find(x=>x.id===parseInt(arbreIdField?.value)); const ttn = getTravaux().find(t=>typeSel.value.includes(t.nom)); _majIndiceCout('f-tcout-hint', ttn?ttn.nom:'', aa); }
+  // Ne pas écraser un coût saisi à la main ; un montant pré-rempli automatiquement suit le type choisi
+  if(parseFloat(coutField.value) > 0 && coutField.dataset.auto!=='1') return;
+  coutField.dataset.auto = '1';
+  coutField.value = 0;
 
   // Trouver le type correspondant
   const typeRaw = typeSel.value;
@@ -6620,7 +6625,7 @@ function openRempotageModal(id){
   </div>
   <div class="modal-body">
     <div class="form-row">
-      <div class="fg"><label>Arbre *</label><select id="r-arbre">${db.arbres.map(a=>`<option value="${a.id}" ${isEdit&&r.arbre_id===a.id?'selected':''}>${a.nom}</option>`).join('')}</select></div>
+      <div class="fg"><label>Arbre *</label><select id="r-arbre" onchange="majCoutRemp()">${db.arbres.map(a=>`<option value="${a.id}" ${isEdit&&r.arbre_id===a.id?'selected':''}>${a.nom}</option>`).join('')}</select></div>
       <div class="fg"><label>Date *</label><input id="r-date" type="date" value="${isEdit?r.date:new Date().toISOString().split('T')[0]}"></div>
     </div>
     <div class="form-section">Pot utilisé</div>
@@ -6645,6 +6650,8 @@ function openRempotageModal(id){
       <div class="fg"><label>Litres utilisés</label><input id="r-litres" type="number" step="0.1" min="0" value="${isEdit?r.litres_utilises||'':''}" oninput="updateCoutSubstrat()" placeholder="ex: 2.5"></div>
     </div>
     <div id="r-cout-substrat" style="font-size:12px;color:var(--gold);margin-bottom:10px;display:none"></div>
+    <div class="form-row"><div class="fg"><label>Coût du travail (CHF)</label><input id="r-cout" type="number" min="0" step="0.05" value="${(()=>{ if(!isEdit) return 0; const ar=db.arbres.find(x=>x.id===r.arbre_id); const tr=ar&&(ar.travaux||[]).find(t=>t.remp_id===r.id); return tr?tr.cout||0:0; })()}" oninput="this.dataset.auto='0'"></div></div>
+    <div id="r-cout-hint" style="font-size:12px;color:var(--moss);margin:-6px 0 10px"></div>
     <div class="form-row one"><div class="fg"><label>Notes sur le rempotage</label><textarea id="r-notes" rows="3" placeholder="État des racines, observations, technique…">${isEdit?r.notes||'':''}</textarea></div></div>
     <div class="form-section">Photos & Vidéos</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px" id="r-media-preview">
@@ -6665,6 +6672,7 @@ function openRempotageModal(id){
   window._rempMediaTmp = isEdit?{photos:[...(r.photos||[])],videos:[...(r.videos||[])]}:{photos:[],videos:[]};
   document.getElementById('modal-overlay').style.display='flex';
   if(isEdit) updateCoutSubstrat();
+  if(!isEdit) majCoutRemp(); else _majIndiceCout('r-cout-hint','Rempotage', db.arbres.find(x=>x.id===r.arbre_id));
   // Afficher volume du pot pré-sélectionné
   setTimeout(()=>{
     const potSel = document.getElementById('r-pot');
@@ -6674,6 +6682,14 @@ function openRempotageModal(id){
   document.getElementById('r-pot').addEventListener('change',function(){if(this.value==='nouveau'){this.value='';nouveauPotDepuisSelect('r-pot', parseInt(document.getElementById('r-arbre')?.value)||0, _labelPotRemp);}});
 }
 
+function majCoutRemp(){
+  const f = document.getElementById('r-cout'); if(!f) return;
+  const a = db.arbres.find(x=>x.id===parseInt(document.getElementById('r-arbre')?.value));
+  _majIndiceCout('r-cout-hint','Rempotage', a);
+  if(parseFloat(f.value)>0 && f.dataset.auto!=='1') return;
+  f.dataset.auto='1';
+  f.value = a ? _coutTravailPourArbre('Rempotage', a).cout : 0;
+}
 function updateCoutSubstrat(){
   const melId=parseInt(document.getElementById('r-mel')?.value||0);
   const litres=parseFloat(document.getElementById('r-litres')?.value||0);
@@ -6752,7 +6768,8 @@ function sauvegarderRempotage(id){
     // Chercher un travail existant lié à ce rempotage
     const existingIdx = arbre.travaux.findIndex(t=>t.remp_id===rempId);
     const prec = existingIdx>=0 ? arbre.travaux[existingIdx] : null;
-    const travail = { date, type:'Rempotage', desc, cout:prec?.cout||0, photosLinked:(arbre.photos||[]).filter(p=>p.date===date).map(p=>p.id), remp_id:rempId };
+    const coutSaisi = parseFloat(document.getElementById('r-cout')?.value);
+    const travail = { date, type:'Rempotage', desc, cout:isNaN(coutSaisi)?(prec?.cout||0):coutSaisi, photosLinked:(arbre.photos||[]).filter(p=>p.date===date).map(p=>p.id), remp_id:rempId };
     if(existingIdx>=0){ arbre.travaux[existingIdx]=travail; }
     else { arbre.travaux.unshift(travail); }
 
@@ -9600,87 +9617,192 @@ function masseAppliquerTravail(){
   render();
 }
 
-function masseAjouterTravailRealise(){
-  document.getElementById('masse-menu').style.display='none';
-  const ids = [...etiqSel];
-  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
-  if(!arbres.length) return;
-  const today = new Date().toISOString().split('T')[0];
-  const m = document.getElementById('modal');
-  const ov = document.getElementById('modal-overlay');
-  m.innerHTML = `
-    <div style="padding:24px;max-width:420px">
-      <div style="font-size:16px;font-weight:700;margin-bottom:16px">Ajouter un travail réalisé</div>
-      <div style="font-size:13px;color:var(--stone);margin-bottom:12px">${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Type de travail</label>
-          <select id="mtr-type" onchange="mtrUpdateCoutUI()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px">${TRAVAUX_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Date du travail</label>
-          <input id="mtr-date" type="date" value="${today}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
-        <div><label style="font-size:12px;font-weight:600;color:var(--stone)">Description / Observations</label>
-          <textarea id="mtr-desc" rows="2" placeholder="Décrivez le travail effectué…" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></textarea></div>
-        <div id="mtr-cout-taille-wrap" style="display:none;background:var(--moss-light);border-radius:6px;padding:10px">
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--moss);font-weight:600">
-            <input type="checkbox" id="mtr-par-taille" checked onchange="mtrUpdateCoutUI()">
-            🎋 Coût selon la taille de chaque arbre
-          </label>
-          <div id="mtr-cout-taille-info" style="font-size:11px;color:var(--stone);margin-top:6px;line-height:1.6"></div>
-        </div>
-        <div id="mtr-cout-manuel-wrap"><label style="font-size:12px;font-weight:600;color:var(--stone)">Coût (CHF)</label>
-          <input id="mtr-cout" type="number" min="0" value="0" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:4px"></div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button onclick="closeModal()" style="padding:8px 16px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer">Annuler</button>
-        <button onclick="masseAppliquerTravailRealise()" style="padding:8px 18px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Enregistrer</button>
-      </div>
-    </div>`;
-  ov.style.display='flex';
-  mtrUpdateCoutUI();
+// ── Coût selon la taille : outils communs ─────────────────────────────────────
+// Le type a-t-il un barème par taille ?
+function _aBaremeTaille(tt){ return !!(tt && Array.isArray(tt.couts_taille) && tt.couts_taille.some(v=>v!=null && v>0)); }
+// Coût d'un type de travail pour un arbre (barème par taille sinon coût fixe du type)
+function _coutTravailPourArbre(typeNom, a){
+  const tt = getTravaux().find(t=>t.nom===typeNom);
+  if(!tt) return {cout:0, cat:null, tt:null, parTaille:false};
+  const cat = getTailleCategorie(a);
+  if(_aBaremeTaille(tt)){
+    const idx = TAILLE_CATS.indexOf(cat);
+    const v = idx>=0 ? tt.couts_taille[idx] : null;
+    if(v!=null && v>0) return {cout:v, cat, tt, parTaille:true};
+  }
+  return {cout:tt.cout||0, cat, tt, parTaille:false};
+}
+// Petit texte sous un champ « Coût » : d'où vient le montant proposé
+function _majIndiceCout(elId, typeNom, a){
+  const el = document.getElementById(elId); if(!el) return;
+  if(!a){ el.textContent=''; return; }
+  const r = _coutTravailPourArbre(typeNom, a);
+  if(r.parTaille) el.innerHTML = `🎋 Tarif <b>${r.cat}</b> (${a.hauteur} cm) pour « ${esc(typeNom)} » : ${fmtCHF(r.cout)} — modifiable`;
+  else if(_aBaremeTaille(r.tt)) el.innerHTML = `🎋 Barème par taille défini, mais ${r.cat?'pas de tarif pour <b>'+r.cat+'</b>':'hauteur de l\'arbre non renseignée'}${r.cout?' — coût fixe du type : '+fmtCHF(r.cout):''}`;
+  else if(r.cout) el.innerHTML = `Coût habituel de « ${esc(typeNom)} » : ${fmtCHF(r.cout)}`;
+  else el.textContent = '';
+}
+function _volumePot(pot){
+  if(!pot) return null;
+  const v = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut*facteurVolumeForme(pot.forme)/1000 : null);
+  return v ? Math.round(v*100)/100 : null;
+}
+function _potActuel(a){
+  const r = (db.rempotages||[]).filter(x=>x.arbre_id===a.id && x.pot_id).sort((x,y)=>(y.date||'').localeCompare(x.date||''))[0];
+  return r ? db.pots.find(p=>p.id===r.pot_id)||null : null;
 }
 
-function mtrUpdateCoutUI(){
-  const typeNom = document.getElementById('mtr-type')?.value;
-  const tt = getTravaux().find(t=>t.nom===typeNom);
-  const hasTaille = !!(tt && tt.couts_taille && tt.couts_taille.some(v=>v!=null && v>0));
+// ── Travail réalisé en masse (même contenu que la fenêtre d'un arbre) ────────
+function masseAjouterTravailRealise(){
+  document.getElementById('masse-menu').style.display='none';
+  const arbres = [...etiqSel].map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+  const today = new Date().toISOString().split('T')[0];
+  const types = getTravaux();
+  document.getElementById('modal').innerHTML = `
+  <div class="modal-head">
+    <div class="modal-title">Enregistrer un travail — ${arbres.length} arbre${arbres.length>1?'s':''}</div>
+    <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-row">
+      <div class="fg"><label>Type de travail *</label>
+        <select id="mtr-type" onchange="mtrMaj()">${types.map(t=>`<option value="${esc(t.nom)}">${t.emoji||TRAVAUX_ICONS[t.nom]||'📝'} ${esc(t.nom)}</option>`).join('')}</select></div>
+      <div class="fg"><label>Date *</label><input id="mtr-date" type="date" value="${today}"></div>
+    </div>
+    <div class="form-row one"><div class="fg"><label>Description / Observations</label>
+      <textarea id="mtr-desc" rows="2" placeholder="Décrivez le travail effectué…"></textarea></div></div>
+
+    <div id="mtr-cout-taille-wrap" style="display:none;background:var(--moss-light);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--moss);font-weight:600">
+        <input type="checkbox" id="mtr-par-taille" checked onchange="mtrMaj()"> 🎋 Coût selon la taille de chaque arbre
+      </label>
+      <div id="mtr-cout-taille-info" style="font-size:12px;color:var(--stone);margin-top:6px;line-height:1.6"></div>
+    </div>
+    <div class="form-row" id="mtr-cout-manuel-wrap">
+      <div class="fg"><label>Coût par arbre (CHF)</label><input id="mtr-cout" type="number" min="0" value="0"></div>
+    </div>
+
+    <div id="mtr-remp" style="display:none">
+      <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:#185fa5;margin:14px 0 10px;padding-bottom:5px;border-bottom:1px solid #dbe8f5">🪴 Détails du rempotage</div>
+      <div class="fg" style="margin-bottom:10px"><label>Pot</label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:4px 0;cursor:pointer"><input type="radio" name="mtr-pot" value="garder" checked onchange="mtrMaj()"> Chaque arbre garde son pot actuel</label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer"><input type="radio" name="mtr-pot" value="aucun" onchange="mtrMaj()"> Pot à préciser ensuite, arbre par arbre</label>
+      </div>
+      <div class="form-row">
+        <div class="fg"><label>Mélange de substrat</label>
+          <select id="mtr-mel" onchange="mtrMaj()"><option value="">— Choisir un mélange —</option>
+          ${db.melanges.map(mel=>`<option value="${mel.id}">${esc(mel.nom)} (${fmtCHF(calculPrixLitreMelange(mel))}/L)</option>`).join('')}</select></div>
+        <div class="fg"><label>Litres</label>
+          <select id="mtr-lit-mode" onchange="mtrMaj()">
+            <option value="pot">Volume du pot de chaque arbre</option>
+            <option value="fixe">Même quantité pour chaque arbre</option>
+          </select></div>
+      </div>
+      <div class="form-row" id="mtr-lit-fixe-wrap" style="display:none">
+        <div class="fg"><label>Litres par arbre</label><input id="mtr-litres" type="number" step="0.1" min="0" placeholder="ex: 1.5" oninput="mtrMaj()"></div>
+      </div>
+      <div id="mtr-remp-info" style="font-size:12px;color:var(--stone);margin:-2px 0 10px;line-height:1.6"></div>
+      <div class="form-row one"><div class="fg"><label>Notes sur les racines</label><input id="mtr-racines" placeholder="Ex: Réduction 1/3, nébari dégagé…"></div></div>
+    </div>
+    <div style="font-size:12px;color:var(--stone);margin-top:6px">📷 Les photos prises le même jour sont liées automatiquement au travail de chaque arbre.</div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="masseAppliquerTravailRealise()">✓ Enregistrer</button>
+  </div>`;
+  document.getElementById('modal-overlay').style.display='flex';
+  mtrMaj();
+}
+
+// Calcul des valeurs par arbre (sert à l'aperçu et à l'enregistrement)
+function _mtrPlan(){
+  const arbres = [...etiqSel].map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  const type = document.getElementById('mtr-type')?.value||'';
+  const tt = getTravaux().find(t=>t.nom===type);
+  const parTaille = _aBaremeTaille(tt) && !!document.getElementById('mtr-par-taille')?.checked;
+  const coutManuel = parseFloat(document.getElementById('mtr-cout')?.value)||0;
+  const estRemp = type==='Rempotage';
+  const garderPot = document.querySelector('input[name="mtr-pot"]:checked')?.value!=='aucun';
+  const melId = parseInt(document.getElementById('mtr-mel')?.value)||null;
+  const modeLit = document.getElementById('mtr-lit-mode')?.value||'pot';
+  const litFixe = parseFloat(document.getElementById('mtr-litres')?.value)||null;
+  const lignes = arbres.map(a=>{
+    const c = parTaille ? _coutTravailPourArbre(type, a) : {cout:coutManuel, cat:getTailleCategorie(a), parTaille:false};
+    const cout = parTaille && !c.parTaille ? (tt.cout||coutManuel||0) : c.cout;
+    const pot = estRemp && garderPot ? _potActuel(a) : null;
+    const litres = !estRemp || !melId ? null : (modeLit==='fixe' ? litFixe : _volumePot(pot));
+    return {a, cout, cat:c.cat, pot, litres};
+  });
+  return {arbres, type, tt, parTaille, estRemp, garderPot, melId, modeLit, lignes};
+}
+
+function mtrMaj(){
+  const P = _mtrPlan();
   const wrap = document.getElementById('mtr-cout-taille-wrap');
+  if(wrap) wrap.style.display = _aBaremeTaille(P.tt) ? 'block' : 'none';
+  document.getElementById('mtr-cout-manuel-wrap').style.display = P.parTaille ? 'none' : '';
   const info = document.getElementById('mtr-cout-taille-info');
-  const manuelWrap = document.getElementById('mtr-cout-manuel-wrap');
-  const cb = document.getElementById('mtr-par-taille');
-  if(wrap) wrap.style.display = hasTaille ? 'block' : 'none';
-  const parTailleActif = hasTaille && cb && cb.checked;
-  if(info) info.innerHTML = parTailleActif
-    ? TAILLE_CATS.map((c,i)=>`${c} : ${tt.couts_taille[i]||0} CHF`).join('<br>')
-    : '';
-  if(manuelWrap) manuelWrap.style.display = parTailleActif ? 'none' : 'block';
+  if(info){
+    if(P.parTaille){
+      const parCat = {};
+      P.lignes.forEach(l=>{ const k = l.cat || 'Hauteur inconnue'; (parCat[k] = parCat[k] || {n:0, cout:l.cout}).n++; });
+      const total = P.lignes.reduce((s,l)=>s+l.cout,0);
+      info.innerHTML = Object.entries(parCat).map(([k,v])=>`${k} : ${v.n} arbre${v.n>1?'s':''} × ${fmtCHF(v.cout)}`).join('<br>')
+        + `<br><b>Total : ${fmtCHF(total)}</b>`;
+    } else info.innerHTML = '';
+  }
+  const remp = document.getElementById('mtr-remp');
+  if(remp) remp.style.display = P.estRemp ? 'block' : 'none';
+  const fixeWrap = document.getElementById('mtr-lit-fixe-wrap');
+  if(fixeWrap) fixeWrap.style.display = P.modeLit==='fixe' ? '' : 'none';
+  const ri = document.getElementById('mtr-remp-info');
+  if(ri && P.estRemp){
+    const avecPot = P.lignes.filter(l=>l.pot).length;
+    let t = P.garderPot ? `${avecPot} arbre${avecPot>1?'s ont':' a'} un pot enregistré${avecPot<P.lignes.length?` · ${P.lignes.length-avecPot} sans pot (à préciser ensuite dans leur fiche)`:''}.` : 'Aucun pot ne sera noté : précisez-le ensuite dans chaque fiche.';
+    if(P.melId){
+      const mel = db.melanges.find(m=>m.id===P.melId);
+      const tot = P.lignes.reduce((s,l)=>s+(l.litres||0),0);
+      const sans = P.lignes.filter(l=>!l.litres).length;
+      t += `<br>Substrat : <b>${tot.toFixed(1)} L</b>${mel?` (${fmtCHF(calculPrixLitreMelange(mel)*tot)})`:''}${mel&&mel.litres_total!=null?` · stock ${(+mel.litres_total).toFixed(1)} L`:''}`;
+      if(sans) t += `<br>⚠️ ${sans} arbre${sans>1?'s':''} sans quantité (${P.modeLit==='pot'?'pot inconnu ou dimensions intérieures non renseignées':'litres non saisis'}) : rien ne sera déduit du stock pour ${sans>1?'eux':'lui'}.`;
+    }
+    ri.innerHTML = t;
+  }
 }
 
 function masseAppliquerTravailRealise(){
-  const ids = [...etiqSel];
-  const arbres = ids.map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
-  const type  = document.getElementById('mtr-type')?.value||'';
-  const date  = document.getElementById('mtr-date')?.value||'';
-  const desc  = document.getElementById('mtr-desc')?.value||'';
-  const coutManuel = parseFloat(document.getElementById('mtr-cout')?.value)||0;
-  const cb = document.getElementById('mtr-par-taille');
-  const tt = getTravaux().find(t=>t.nom===type);
-  const parTaille = !!(cb && cb.checked && tt && tt.couts_taille && tt.couts_taille.some(v=>v!=null && v>0));
-  if(!type||!date) return;
-  arbres.forEach(a=>{
+  const P = _mtrPlan();
+  const date = document.getElementById('mtr-date')?.value||'';
+  const desc = document.getElementById('mtr-desc')?.value||'';
+  const racines = document.getElementById('mtr-racines')?.value||'';
+  if(!P.type||!date) return;
+  if(P.estRemp && P.melId){
+    const mel = db.melanges.find(m=>m.id===P.melId);
+    const tot = P.lignes.reduce((s,l)=>s+(l.litres||0),0);
+    if(mel && mel.litres_total!=null && tot > mel.litres_total + 0.001 &&
+       !confirm(`Il faut ${tot.toFixed(1)} L de « ${mel.nom} » mais le stock n'en compte que ${(+mel.litres_total).toFixed(1)} L.\n\nEnregistrer quand même (le stock tombera à 0) ?`)) return;
+  }
+  P.lignes.forEach(({a, cout, pot, litres})=>{
     if(!a.travaux) a.travaux=[];
     const photosLinked = (a.photos||[]).filter(p=>p.date===date).map(p=>p.id);
-    let cout = coutManuel;
-    if(parTaille){
-      const cat = getTailleCategorie(a);
-      const idx = TAILLE_CATS.indexOf(cat);
-      const coutTaille = idx>=0 ? tt.couts_taille[idx] : null;
-      cout = (coutTaille!=null && coutTaille>0) ? coutTaille : (tt.cout||coutManuel||0);
+    const t = {date, type:P.type, desc, cout, photosLinked};
+    if(P.estRemp){
+      const r = {id:_prochainId(db.rempotages,'nextRempId'), arbre_id:a.id, date, pot_id:pot?pot.id:null,
+        melange_id:P.melId, litres_utilises:litres||null, notes:racines, photos:[], videos:[],
+        pot_nom:'', pot_mat:'', pot_l:null, pot_w:null, pot_h:null, substrat:''};
+      db.rempotages.push(r);
+      _stockMelange(P.melId, litres, -1);
+      if(pot){ pot.statut='utilisé'; pot.arbre_id=a.id; a.pot=pot.nom; }
+      t.remp_id = r.id;
     }
-    a.travaux.unshift({date,type,desc,cout,photosLinked});
+    a.travaux.unshift(t);
   });
   autoSave();
   closeModal();
   etiqSel.clear();
   render();
+  afficherIndicateur(`✅ ${P.type} enregistré sur ${P.lignes.length} arbre${P.lignes.length>1?'s':''}`);
 }
 
 function masseSupprimerTravail(){
