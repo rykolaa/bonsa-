@@ -664,6 +664,15 @@ function _recycler(litres){
   const sb = _substratRecycle(litres>0);
   if(sb) sb.litres_restants = Math.max(0, Math.round(((sb.litres_restants||0) + litres)*100)/100);
 }
+function ajouterSubstratRecycle(signe){
+  const t = prompt(signe>0 ? 'Litres de substrat récupéré à ajouter au stock :' : 'Litres à retirer du stock recyclé (jeté, utilisé hors mélange…) :', '');
+  if(t===null) return;
+  const l = parseFloat(String(t).replace(',','.'));
+  if(!(l>0)){ alert('Indiquez un nombre de litres.'); return; }
+  _substratRecycle(true);
+  _recycler(signe*l);
+  renderAtelier(document.getElementById('content')); autoSave();
+}
 // Pot en place sur l'arbre juste avant un rempotage (= celui qu'on vide)
 function _potAvantRempotage(arbreId, date, exclRempId){
   const r = (db.rempotages||[]).filter(x=>x.arbre_id===arbreId && x.pot_id && x.id!==exclRempId && (!date || (x.date||'')<=date))
@@ -5800,6 +5809,7 @@ function _reparerIdsSubstrats(){
 
 function renderSubstrats(c){
   _reparerIdsSubstrats();
+  if(!_substratRecycle(false)){ _substratRecycle(true); autoSave(); }
   const existing = c.innerHTML;
   let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
   <div>
@@ -5809,7 +5819,7 @@ function renderSubstrats(c){
     </div>`;
 
   if(!db.substrats.length){html+=`<div class="empty" style="padding:30px 0"><div class="empty-icon">🌱</div><div>Aucun substrat</div></div>`;}
-  else db.substrats.forEach(s=>{
+  else [...db.substrats].sort((x,y)=>(y.recycle?1:0)-(x.recycle?1:0)).forEach(s=>{
     if(s.recycle){
       html+=`<div class="substrat-card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid #8a7f6a" onclick="openSubstratModal(${s.id})">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
@@ -5821,7 +5831,11 @@ function renderSubstrats(c){
           <span style="color:var(--stone)">Récupéré lors des rempotages</span>
           <span style="font-weight:600;color:var(--moss)">${(Math.round((s.litres_restants||0)*10)/10)} L en stock</span>
         </div>
-        <div style="font-size:11px;color:var(--stone);margin-top:5px">Pour le réutiliser, ajoutez-le à un mélange.</div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();ajouterSubstratRecycle(1)">＋ Ajouter des litres</button>
+          <button class="btn" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();ajouterSubstratRecycle(-1)">− Retirer</button>
+        </div>
+        <div style="font-size:11px;color:var(--stone);margin-top:6px">Se remplit aussi avec « ♻️ Substrat récupéré » lors d'un rempotage. Pour le réutiliser, ajoutez-le à un mélange.</div>
       </div>`;
       return;
     }
