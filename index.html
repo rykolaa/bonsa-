@@ -647,6 +647,49 @@ function _stockMelange(melId, litres, signe){
     if(sb) sb.litres_restants = Math.max(0, (sb.litres_restants||0) + signe*litres*c.pct/100);
   });
 }
+// ── Substrat recyclé (récupéré lors des rempotages) ──────────────────────────
+function _substratRecycle(creer){
+  let sb = (db.substrats||[]).find(x=>x.recycle);
+  if(!sb && creer){
+    sb = {nom:'Substrat recyclé', marque:'Récupéré aux rempotages', granulo:'mélangé', couleur:'#8a7f6a',
+      sac_litres:1, sac_prix:0, sacs_total:0, litres_restants:0, recycle:true, date_achat:'',
+      notes:'Ancien substrat récupéré lors des rempotages (à tamiser avant réemploi).'};
+    sb.id = _prochainId(db.substrats,'nextSubId');
+    db.substrats.push(sb);
+  }
+  return sb || null;
+}
+function _recycler(litres){
+  if(!litres) return;
+  const sb = _substratRecycle(litres>0);
+  if(sb) sb.litres_restants = Math.max(0, Math.round(((sb.litres_restants||0) + litres)*100)/100);
+}
+// Pot en place sur l'arbre juste avant un rempotage (= celui qu'on vide)
+function _potAvantRempotage(arbreId, date, exclRempId){
+  const r = (db.rempotages||[]).filter(x=>x.arbre_id===arbreId && x.pot_id && x.id!==exclRempId && (!date || (x.date||'')<=date))
+    .sort((x,y)=>(y.date||'').localeCompare(x.date||''))[0];
+  return r ? (db.pots||[]).find(p=>p.id===r.pot_id)||null : null;
+}
+function _volPot(pot){
+  if(!pot) return null;
+  const v = pot.volume_litres || (pot.int_long&&pot.int_larg&&pot.int_haut ? pot.int_long*pot.int_larg*pot.int_haut*facteurVolumeForme(pot.forme)/1000 : null);
+  return v ? Math.round(v*100)/100 : null;
+}
+// Ligne « ♻️ Substrat récupéré » pour les fenêtres d'un arbre
+function _champRecup(idInput, valeur, arbreId, date, exclRempId){
+  const pot = arbreId ? _potAvantRempotage(arbreId, date, exclRempId) : null;
+  const vol = _volPot(pot);
+  return `<div class="form-row"><div class="fg"><label>♻️ Substrat récupéré (L)</label>
+    <input id="${idInput}" type="number" step="0.1" min="0" value="${valeur||''}" placeholder="0">
+    <div id="${idInput}-aide" style="font-size:11px;color:var(--stone);margin-top:4px">Ajouté au stock « Substrat recyclé » (Atelier › Substrats).${vol?` <a href="#" onclick="event.preventDefault();document.getElementById('${idInput}').value='${vol}'" style="color:var(--moss)">Volume de l'ancien pot : ${vol} L</a>`:''}</div>
+  </div></div>`;
+}
+function _majAideRecup(idInput, arbreId, date){
+  const el = document.getElementById(idInput+'-aide'); if(!el) return;
+  const vol = _volPot(arbreId ? _potAvantRempotage(arbreId, date) : null);
+  el.innerHTML = `Ajouté au stock « Substrat recyclé » (Atelier › Substrats).${vol?` <a href="#" onclick="event.preventDefault();document.getElementById('${idInput}').value='${vol}'" style="color:var(--moss)">Volume de l'ancien pot : ${vol} L</a>`:''}`;
+}
+
 function potsEnUsage(excludeArbreId){
   const map = {};
   db.arbres.forEach(a=>{
@@ -3739,7 +3782,7 @@ function openTravailModal(arbreId, travailIdx){
     <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
   </div>
   <div class="modal-body">
-    ${!singleArbre?`<div class="fg" style="margin-bottom:12px"><label>Arbre concerné *</label><select id="f-tarbre" onchange="updateTravailPhotos();majCoutTravail()">${db.arbres.map(x=>`<option value="${x.id}">${getEmoji(x.espece)} ${x.nom}</option>`).join('')}</select></div>`:'<input type="hidden" id="f-tarbre" value="'+arbreId+'">'}
+    ${!singleArbre?`<div class="fg" style="margin-bottom:12px"><label>Arbre concerné *</label><select id="f-tarbre" onchange="updateTravailPhotos();majCoutTravail();_majAideRecup('f-remp-recup',parseInt(this.value),document.getElementById('f-tdate').value)">${db.arbres.map(x=>`<option value="${x.id}">${getEmoji(x.espece)} ${x.nom}</option>`).join('')}</select></div>`:'<input type="hidden" id="f-tarbre" value="'+arbreId+'">'}
     <div class="form-row">
       <div class="fg"><label>Type de travail *</label>
         <select id="f-ttype" onchange="toggleRempotageFields();majCoutTravail()">
@@ -3811,6 +3854,7 @@ function openTravailModal(arbreId, travailIdx){
         <div class="form-row one"><div class="fg"><label>Substrat (description libre)</label><input id="f-substrat" value="${trav?.substrat||''}" placeholder="Ex: Akadama 60% / Pumice 40%"></div></div>
       </div>
       <div id="f-remp-cout-sub" style="font-size:12px;color:var(--gold);margin-bottom:6px;display:none"></div>
+      ${_champRecup('f-remp-recup', r?.litres_recuperes, singleArbre?arbreId:(db.arbres[0]&&db.arbres[0].id), dateVal, rempId)}
       <div class="form-row one"><div class="fg"><label>Notes sur les racines</label><input id="f-racines" value="${r?.notes||trav?.racines||''}" placeholder="Ex: Réduction 1/3, nébari dégagé…"></div></div>
       <input type="hidden" id="f-remp-id" value="${rempId||''}">`;
       })()}
@@ -3929,6 +3973,7 @@ function saveTravail(arbreId, travailIdx){
     const melSelVal  = document.getElementById('f-remp-mel')?.value  || '';
     const litres     = parseFloat(document.getElementById('f-remp-litres')?.value)||null;
     const racines    = document.getElementById('f-racines')?.value   || '';
+    const recup      = parseFloat(document.getElementById('f-remp-recup')?.value)||0;
     const potIdNum   = (potSelVal && potSelVal!=='__libre') ? parseInt(potSelVal)||null : null;
     const melIdNum   = (melSelVal && melSelVal!=='__libre') ? parseInt(melSelVal)||null : null;
     // Saisie libre
@@ -3942,7 +3987,7 @@ function saveTravail(arbreId, travailIdx){
     const rempData = {
       arbre_id: id, date, pot_id: potIdNum, melange_id: melIdNum,
       litres_utilises: litres, notes: racines, photos: [], videos: [],
-      pot_nom, pot_mat, pot_l, pot_w, pot_h, substrat
+      pot_nom, pot_mat, pot_l, pot_w, pot_h, substrat, litres_recuperes: recup||null
     };
     // Aucun pot choisi : on garde l'ancienne description libre éventuelle (données historiques)
     if(!potIdNum){
@@ -3957,6 +4002,7 @@ function saveTravail(arbreId, travailIdx){
     if(existing){
       // Modification : on rend d'abord ce qui avait été déduit, puis on déduit la nouvelle quantité
       _stockMelange(existing.melange_id, existing.litres_utilises, +1);
+      _recycler(-(existing.litres_recuperes||0));
       rempData.photos = existing.photos||[]; rempData.videos = existing.videos||[];
       Object.assign(existing, rempData); rempId = existingRempId;
     } else {
@@ -3965,6 +4011,7 @@ function saveTravail(arbreId, travailIdx){
       rempId = rempData.id;
     }
     _stockMelange(melIdNum, litres, -1);
+    _recycler(recup);
     // Mettre à jour le pot
     if(potIdNum){
       const pot = db.pots.find(p=>p.id===potIdNum);
@@ -5433,6 +5480,7 @@ function renderRempotages(c){
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
             ${pot?`<div style="background:var(--stone-light);border-radius:var(--radius);padding:7px 10px"><div style="font-size:10px;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">Pot</div><div style="font-size:12px;font-weight:500">${pot.nom}</div><div style="font-size:11px;color:var(--stone)">${pot.long}×${pot.larg}×${pot.haut} cm · ${pot.poids} kg</div></div>`:''}
             ${mel?`<div style="background:#e8f5e8;border-radius:var(--radius);padding:7px 10px"><div style="font-size:10px;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">Substrat</div><div style="font-size:12px;font-weight:500">${mel.nom}</div><div style="font-size:11px;color:var(--stone)">${r.litres_utilises||'?'} L · ${fmtCHF(coutSubstrat)}</div></div>`:''}
+            ${r.litres_recuperes?`<div style="background:#efede6;border-radius:var(--radius);padding:7px 10px"><div style="font-size:10px;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">♻️ Récupéré</div><div style="font-size:12px;font-weight:500">${r.litres_recuperes} L</div></div>`:''}
             ${r.notes?`<div style="background:var(--gold-light);border-radius:var(--radius);padding:7px 10px"><div style="font-size:10px;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">Notes</div><div style="font-size:11px;color:var(--ink);line-height:1.4">${r.notes.substring(0,80)}${r.notes.length>80?'…':''}</div></div>`:''}
           </div>
           ${r.photos&&r.photos.length||r.videos&&r.videos.length?`<div class="media-strip">
@@ -5762,6 +5810,21 @@ function renderSubstrats(c){
 
   if(!db.substrats.length){html+=`<div class="empty" style="padding:30px 0"><div class="empty-icon">🌱</div><div>Aucun substrat</div></div>`;}
   else db.substrats.forEach(s=>{
+    if(s.recycle){
+      html+=`<div class="substrat-card" style="margin-bottom:10px;cursor:pointer;border-left:3px solid #8a7f6a" onclick="openSubstratModal(${s.id})">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="font-size:16px">♻️</div>
+          <div class="substrat-nom" style="margin:0">${esc(s.nom)}</div>
+          <span class="price-pill" style="margin-left:auto">${s.sac_prix>0&&s.sac_litres>0?fmtCHF(s.sac_prix/s.sac_litres)+'/L':'gratuit'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span style="color:var(--stone)">Récupéré lors des rempotages</span>
+          <span style="font-weight:600;color:var(--moss)">${(Math.round((s.litres_restants||0)*10)/10)} L en stock</span>
+        </div>
+        <div style="font-size:11px;color:var(--stone);margin-top:5px">Pour le réutiliser, ajoutez-le à un mélange.</div>
+      </div>`;
+      return;
+    }
     const pctRestant = Math.round(s.litres_restants/(s.sac_litres*s.sacs_total)*100);
     const prixLitre = s.sac_litres>0 ? s.sac_prix/s.sac_litres : 0;
     const couleur = s.couleur||SUBSTRAT_COULEURS[s.id%SUBSTRAT_COULEURS.length];
@@ -6625,7 +6688,7 @@ function openRempotageModal(id){
   </div>
   <div class="modal-body">
     <div class="form-row">
-      <div class="fg"><label>Arbre *</label><select id="r-arbre" onchange="majCoutRemp()">${db.arbres.map(a=>`<option value="${a.id}" ${isEdit&&r.arbre_id===a.id?'selected':''}>${a.nom}</option>`).join('')}</select></div>
+      <div class="fg"><label>Arbre *</label><select id="r-arbre" onchange="majCoutRemp();_majAideRecup('r-recup',parseInt(this.value),document.getElementById('r-date').value)">${db.arbres.map(a=>`<option value="${a.id}" ${isEdit&&r.arbre_id===a.id?'selected':''}>${a.nom}</option>`).join('')}</select></div>
       <div class="fg"><label>Date *</label><input id="r-date" type="date" value="${isEdit?r.date:new Date().toISOString().split('T')[0]}"></div>
     </div>
     <div class="form-section">Pot utilisé</div>
@@ -6652,6 +6715,7 @@ function openRempotageModal(id){
     <div id="r-cout-substrat" style="font-size:12px;color:var(--gold);margin-bottom:10px;display:none"></div>
     <div class="form-row"><div class="fg"><label>Coût du travail (CHF)</label><input id="r-cout" type="number" min="0" step="0.05" value="${(()=>{ if(!isEdit) return 0; const ar=db.arbres.find(x=>x.id===r.arbre_id); const tr=ar&&(ar.travaux||[]).find(t=>t.remp_id===r.id); return tr?tr.cout||0:0; })()}" oninput="this.dataset.auto='0'"></div></div>
     <div id="r-cout-hint" style="font-size:12px;color:var(--moss);margin:-6px 0 10px"></div>
+    <div id="r-recup-wrap">${_champRecup('r-recup', isEdit?r.litres_recuperes:'', isEdit?r.arbre_id:(db.arbres[0]&&db.arbres[0].id), isEdit?r.date:new Date().toISOString().split('T')[0], isEdit?r.id:null)}</div>
     <div class="form-row one"><div class="fg"><label>Notes sur le rempotage</label><textarea id="r-notes" rows="3" placeholder="État des racines, observations, technique…">${isEdit?r.notes||'':''}</textarea></div></div>
     <div class="form-section">Photos & Vidéos</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px" id="r-media-preview">
@@ -6730,19 +6794,21 @@ function sauvegarderRempotage(id){
   const melId=parseInt(document.getElementById('r-mel').value)||null;
   const litres=parseFloat(document.getElementById('r-litres').value)||null;
   const notes=document.getElementById('r-notes').value;
+  const recup=parseFloat(document.getElementById('r-recup')?.value)||0;
 
   const data={
     arbre_id:arbreId, date,
     pot_id:potId, melange_id:melId,
-    litres_utilises:litres, notes,
+    litres_utilises:litres, notes, litres_recuperes:recup||null,
     photos:window._rempMediaTmp.photos,
     videos:window._rempMediaTmp.videos,
     cout_total:0
   };
 
   // Stock : en modification on rend l'ancienne quantité avant de déduire la nouvelle
-  if(id){ const ancien=db.rempotages.find(x=>x.id===id); if(ancien) _stockMelange(ancien.melange_id, ancien.litres_utilises, +1); }
+  if(id){ const ancien=db.rempotages.find(x=>x.id===id); if(ancien){ _stockMelange(ancien.melange_id, ancien.litres_utilises, +1); _recycler(-(ancien.litres_recuperes||0)); } }
   _stockMelange(melId, litres, -1);
+  _recycler(recup);
   // Mettre à jour le pot
   if(potId){
     const pot=db.pots.find(p=>p.id===potId);
@@ -6781,11 +6847,12 @@ function sauvegarderRempotage(id){
 }
 
 function supprimerRempotage(id){
-  if(!confirm('Supprimer ce rempotage ?\n\nLe substrat utilisé est rendu au stock et le pot redevient disponible s\'il n\'est plus en place sur un arbre.'))return;
+  if(!confirm('Supprimer ce rempotage ?\n\nLe substrat utilisé est rendu au stock, le substrat récupéré est retiré du stock recyclé, et le pot redevient disponible s\'il n\'est plus en place sur un arbre.'))return;
   const r = db.rempotages.find(x=>x.id===id);
   db.rempotages=db.rempotages.filter(x=>x.id!==id);
   if(r){
     _stockMelange(r.melange_id, r.litres_utilises, +1);
+    _recycler(-(r.litres_recuperes||0));
     if(r.pot_id && !potsEnUsage()[r.pot_id]){ const pot=db.pots.find(p=>p.id===r.pot_id); if(pot && pot.statut==='utilisé'){ pot.statut='libre'; pot.arbre_id=null; } }
   }
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
@@ -7157,10 +7224,10 @@ function sauvegarderSubstrat(id){
   const sacs=parseInt(document.getElementById('s-sacs').value)||1;
   const data={nom,marque:document.getElementById('s-marque').value,granulo:document.getElementById('s-gran').value,couleur:document.getElementById('s-couleur').value,
     sac_litres:sacL,sac_prix:parseFloat(document.getElementById('s-sac-p').value)||0,sacs_total:sacs,
-    litres_restants:parseFloat(document.getElementById('s-restants').value)||(sacL*sacs),
+    litres_restants:(document.getElementById('s-restants').value!=='' ? parseFloat(document.getElementById('s-restants').value)||0 : (sacL*sacs)),
     notes:document.getElementById('s-notes').value,
     date_achat:document.getElementById('s-date-achat').value||''};
-  if(id){Object.assign(db.substrats.find(x=>x.id===id),data);}
+  if(id){ const ex=db.substrats.find(x=>x.id===id); if(ex&&ex.recycle){ data.recycle=true; data.sacs_total=0; } Object.assign(ex,data); }
   else{data.id=_prochainId(db.substrats,'nextSubId');db.substrats.push(data);}
   closeModal();renderAtelier(document.getElementById('content'));autoSave();
 }
@@ -9703,6 +9770,15 @@ function masseAjouterTravailRealise(){
         <div class="fg"><label>Litres par arbre</label><input id="mtr-litres" type="number" step="0.1" min="0" placeholder="ex: 1.5" oninput="mtrMaj()"></div>
       </div>
       <div id="mtr-remp-info" style="font-size:12px;color:var(--stone);margin:-2px 0 10px;line-height:1.6"></div>
+      <div class="form-row">
+        <div class="fg"><label>♻️ Substrat récupéré</label>
+          <select id="mtr-recup-mode" onchange="mtrMaj()">
+            <option value="">Aucun</option>
+            <option value="pot">Volume de l'ancien pot de chaque arbre</option>
+            <option value="fixe">Même quantité pour chaque arbre</option>
+          </select></div>
+        <div class="fg" id="mtr-recup-fixe-wrap" style="display:none"><label>Litres récupérés par arbre</label><input id="mtr-recup" type="number" step="0.1" min="0" placeholder="ex: 1" oninput="mtrMaj()"></div>
+      </div>
       <div class="form-row one"><div class="fg"><label>Notes sur les racines</label><input id="mtr-racines" placeholder="Ex: Réduction 1/3, nébari dégagé…"></div></div>
     </div>
     <div style="font-size:12px;color:var(--stone);margin-top:6px">📷 Les photos prises le même jour sont liées automatiquement au travail de chaque arbre.</div>
@@ -9727,14 +9803,17 @@ function _mtrPlan(){
   const melId = parseInt(document.getElementById('mtr-mel')?.value)||null;
   const modeLit = document.getElementById('mtr-lit-mode')?.value||'pot';
   const litFixe = parseFloat(document.getElementById('mtr-litres')?.value)||null;
+  const modeRecup = document.getElementById('mtr-recup-mode')?.value||'';
+  const recupFixe = parseFloat(document.getElementById('mtr-recup')?.value)||null;
   const lignes = arbres.map(a=>{
     const c = parTaille ? _coutTravailPourArbre(type, a) : {cout:coutManuel, cat:getTailleCategorie(a), parTaille:false};
     const cout = parTaille && !c.parTaille ? (tt.cout||coutManuel||0) : c.cout;
     const pot = estRemp && garderPot ? _potActuel(a) : null;
     const litres = !estRemp || !melId ? null : (modeLit==='fixe' ? litFixe : _volumePot(pot));
-    return {a, cout, cat:c.cat, pot, litres};
+    const recup = !estRemp || !modeRecup ? null : (modeRecup==='fixe' ? recupFixe : _volumePot(_potActuel(a)));
+    return {a, cout, cat:c.cat, pot, litres, recup};
   });
-  return {arbres, type, tt, parTaille, estRemp, garderPot, melId, modeLit, lignes};
+  return {arbres, type, tt, parTaille, estRemp, garderPot, melId, modeLit, modeRecup, lignes};
 }
 
 function mtrMaj(){
@@ -9756,6 +9835,8 @@ function mtrMaj(){
   if(remp) remp.style.display = P.estRemp ? 'block' : 'none';
   const fixeWrap = document.getElementById('mtr-lit-fixe-wrap');
   if(fixeWrap) fixeWrap.style.display = P.modeLit==='fixe' ? '' : 'none';
+  const rfw = document.getElementById('mtr-recup-fixe-wrap');
+  if(rfw) rfw.style.display = P.modeRecup==='fixe' ? '' : 'none';
   const ri = document.getElementById('mtr-remp-info');
   if(ri && P.estRemp){
     const avecPot = P.lignes.filter(l=>l.pot).length;
@@ -9766,6 +9847,11 @@ function mtrMaj(){
       const sans = P.lignes.filter(l=>!l.litres).length;
       t += `<br>Substrat : <b>${tot.toFixed(1)} L</b>${mel?` (${fmtCHF(calculPrixLitreMelange(mel)*tot)})`:''}${mel&&mel.litres_total!=null?` · stock ${(+mel.litres_total).toFixed(1)} L`:''}`;
       if(sans) t += `<br>⚠️ ${sans} arbre${sans>1?'s':''} sans quantité (${P.modeLit==='pot'?'pot inconnu ou dimensions intérieures non renseignées':'litres non saisis'}) : rien ne sera déduit du stock pour ${sans>1?'eux':'lui'}.`;
+    }
+    if(P.modeRecup){
+      const totR = P.lignes.reduce((s,l)=>s+(l.recup||0),0);
+      const sansR = P.lignes.filter(l=>!l.recup).length;
+      t += `<br>♻️ Récupéré : <b>${totR.toFixed(1)} L</b> ajoutés au substrat recyclé${sansR?` · ${sansR} arbre${sansR>1?'s':''} sans quantité`:''}`;
     }
     ri.innerHTML = t;
   }
@@ -9783,16 +9869,17 @@ function masseAppliquerTravailRealise(){
     if(mel && mel.litres_total!=null && tot > mel.litres_total + 0.001 &&
        !confirm(`Il faut ${tot.toFixed(1)} L de « ${mel.nom} » mais le stock n'en compte que ${(+mel.litres_total).toFixed(1)} L.\n\nEnregistrer quand même (le stock tombera à 0) ?`)) return;
   }
-  P.lignes.forEach(({a, cout, pot, litres})=>{
+  P.lignes.forEach(({a, cout, pot, litres, recup})=>{
     if(!a.travaux) a.travaux=[];
     const photosLinked = (a.photos||[]).filter(p=>p.date===date).map(p=>p.id);
     const t = {date, type:P.type, desc, cout, photosLinked};
     if(P.estRemp){
       const r = {id:_prochainId(db.rempotages,'nextRempId'), arbre_id:a.id, date, pot_id:pot?pot.id:null,
-        melange_id:P.melId, litres_utilises:litres||null, notes:racines, photos:[], videos:[],
+        melange_id:P.melId, litres_utilises:litres||null, litres_recuperes:recup||null, notes:racines, photos:[], videos:[],
         pot_nom:'', pot_mat:'', pot_l:null, pot_w:null, pot_h:null, substrat:''};
       db.rempotages.push(r);
       _stockMelange(P.melId, litres, -1);
+      _recycler(recup||0);
       if(pot){ pot.statut='utilisé'; pot.arbre_id=a.id; a.pot=pot.nom; }
       t.remp_id = r.id;
     }
