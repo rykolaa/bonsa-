@@ -11131,9 +11131,10 @@ async function syncGitHub(opts={}){
   const gen = ++_sync.gen;
   _sync.tActivite = Date.now();
   _syncEtatVisuel('encours');
-  let stats = null;
+  let stats = null, collectionRecuperee = 0;
   try{
     for(let tour=0; ; tour++){
+      collectionRecuperee = 0;
       _syncProgres('Connexion à GitHub…');
       const tete = await ghTete(cfg);
       if(!tete) throw new Error('Le dépôt est vide — reconnectez cet appareil dans 🔄 Synchroniser.');
@@ -11153,8 +11154,30 @@ async function syncGitHub(opts={}){
       }
       // Fusion — bloc synchrone : aucune saisie ne peut s'intercaler
       const local = _syncCollectionLocale();
+      // Garde-fou 1 : collection vide sur cet appareil alors que le dépôt en contient une
+      // (stockage effacé par le navigateur, réinstallation…). Ce n'est pas une suppression :
+      // on récupère la collection du dépôt et on n'envoie jamais le vide.
+      const _nbArbres = c => (c?.arbres||[]).length + (c?.arbres_sortis||[]).length;
+      if(distant && !adopterDepot && _nbArbres(local)===0 && !(local.pots||[]).length && _nbArbres(distant)>0){
+        adopterDepot = true;
+        collectionRecuperee = _nbArbres(distant);
+      }
       _canonCache = new WeakMap();
-      const fusion = !distant ? local : adopterDepot ? {...distant} : fusionnerCollections(base ? JSON.parse(base.coll) : null, local, distant);
+      let fusion = !distant ? local : adopterDepot ? {...distant} : fusionnerCollections(base ? JSON.parse(base.coll) : null, local, distant);
+      // Garde-fou 2 : une synchronisation ne fait jamais disparaître en masse des arbres du dépôt
+      // sans confirmation (les arbres « sortis de la collection » sont comptés comme présents).
+      if(distant && !adopterDepot){
+        const ids = c => new Set([...(c.arbres||[]), ...(c.arbres_sortis||[])].map(a=>String(a.id)));
+        const idsFusion = ids(fusion);
+        const perdus = [...ids(distant)].filter(i=>!idsFusion.has(i)).length;
+        if(perdus > 5){
+          if(!manuel) throw new Error(`synchronisation suspendue : elle effacerait ${perdus} arbres du dépôt. Touchez ☁️ pour décider.`);
+          if(!confirm(`⚠️ Cette synchronisation effacerait ${perdus} arbres du dépôt (et donc des autres appareils).\n\nOK = effacer quand même\nAnnuler = récupérer la collection du dépôt sur cet appareil`)){
+            fusion = {...distant};
+            collectionRecuperee = _nbArbres(distant);
+          }
+        }
+      }
       // Compteurs d'identifiants : jamais en dessous de ceux de cet appareil
       Object.keys(local).filter(k=>/^next/.test(k)).forEach(k=>{ fusion[k] = Math.max(Number(fusion[k])||0, Number(local[k])||0) || fusion[k]; });
       const texteFusion = JSON.stringify(fusion);
@@ -11183,7 +11206,7 @@ async function syncGitHub(opts={}){
     localStorage.setItem(GH_LS.last, new Date().toISOString());
     _sync.dernierEchec = '';
     const det = stats ? [stats.recus?`↓ ${stats.recus}`:'', stats.envoyes?`↑ ${stats.envoyes}`:''].filter(Boolean).join(' · ') : '';
-    afficherIndicateur('✅ Synchronisé'+(det?' — '+det+' photos/documents':''));
+    afficherIndicateur(collectionRecuperee ? `✅ Collection récupérée depuis le dépôt (${collectionRecuperee} arbres)` : '✅ Synchronisé'+(det?' — '+det+' photos/documents':''));
     _syncEtatVisuel('ok');
   } catch(e){
     console.error('Sync GitHub', e);
