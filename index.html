@@ -557,7 +557,8 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
     <button onclick="masseAjouterTravailRealise()" class="masse-btn">✅ Ajouter un travail réalisé</button>
     <button onclick="masseAjouterTravail()"     class="masse-btn">🔧 Ajouter un travail planifié</button>
-    <button onclick="masseSupprimerTravail()"   class="masse-btn" style="color:#b42814">🗑 Supprimer un travail</button>
+    <button onclick="masseSupprimerTravail()"   class="masse-btn" style="color:#b42814">🗑 Supprimer un travail réalisé</button>
+    <button onclick="masseSupprimerPlanifie()"  class="masse-btn" style="color:#b42814">🗑 Supprimer un travail planifié</button>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
     <button onclick="masseSante()"              class="masse-btn">📊 Normaliser la santé à 85%</button>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
@@ -9817,6 +9818,77 @@ function masseAppliquerTravail(){
   closeModal();
   etiqSel.clear();
   render();
+}
+
+// ── Suppression en masse de travaux planifiés ─────────────────────────────────
+function masseSupprimerPlanifie(){
+  document.getElementById('masse-menu').style.display='none';
+  const arbres = [...etiqSel].map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean);
+  if(!arbres.length) return;
+  // Regroupe par type + date les travaux planifiés des arbres sélectionnés
+  const map = new Map();
+  arbres.forEach(a=>getSoinsPlanifies(a).forEach(sp=>{
+    const key = (sp.type||'')+'|||'+(sp.date||'');
+    if(!map.has(key)) map.set(key, {key, type:sp.type||'', date:sp.date||'', count:0, notes:new Set()});
+    const e = map.get(key); e.count++; if(sp.notes) e.notes.add(sp.notes);
+  }));
+  const entries = [...map.values()].sort((x,y)=> (x.date||'').localeCompare(y.date||'') || y.count-x.count);
+  if(!entries.length){ alert('Aucun travail planifié sur les arbres sélectionnés.'); return; }
+  window._mspEntries = entries;
+  const today = new Date().toISOString().split('T')[0];
+  const m = document.getElementById('modal');
+  const ov = document.getElementById('modal-overlay');
+  m.innerHTML = `
+    <div style="padding:24px;max-width:480px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px">🗑 Supprimer des travaux planifiés</div>
+      <div style="font-size:13px;color:var(--stone);margin-bottom:10px">Coche les travaux à retirer des ${arbres.length} arbre${arbres.length>1?'s':''} sélectionné${arbres.length>1?'s':''}</div>
+      <div style="display:flex;gap:12px;margin-bottom:8px;font-size:12px">
+        <a href="#" onclick="event.preventDefault();document.querySelectorAll('.msp-choix').forEach(c=>c.checked=true)">Tout cocher</a>
+        <a href="#" onclick="event.preventDefault();document.querySelectorAll('.msp-choix').forEach(c=>c.checked=false)">Tout décocher</a>
+      </div>
+      <div style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+        ${entries.map((e,i)=>`
+          <label style="display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
+            <input type="checkbox" class="msp-choix" value="${i}" style="margin-top:3px">
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600">${TRAVAUX_ICONS[e.type]||'📅'} ${esc(e.type)} — <span style="color:${e.date&&e.date<today?'var(--rust)':'inherit'}">${e.date?fmtDate(e.date):'sans date'}</span></div>
+              ${e.notes.size?`<div style="font-size:12px;color:var(--stone);margin-top:2px">${[...e.notes].slice(0,2).map(esc).join(' · ')}</div>`:''}
+              <div style="font-size:11px;color:var(--stone);margin-top:2px">sur ${e.count} arbre${e.count>1?'s':''}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="closeModal()" style="padding:8px 16px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer">Annuler</button>
+        <button onclick="masseSupprimerPlanifieConfirmer()" style="padding:8px 18px;background:#b42814;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Supprimer</button>
+      </div>
+    </div>`;
+  ov.style.display='flex';
+}
+
+function masseSupprimerPlanifieConfirmer(){
+  const entries = window._mspEntries||[];
+  const choisis = [...document.querySelectorAll('.msp-choix:checked')].map(c=>entries[parseInt(c.value)]).filter(Boolean);
+  if(!choisis.length){ alert('Coche au moins un travail planifié.'); return; }
+  const cles = new Set(choisis.map(e=>e.key));
+  const total = choisis.reduce((n,e)=>n+e.count, 0);
+  if(!confirm(`Supprimer ${choisis.length} travail${choisis.length>1?'x':''} planifié${choisis.length>1?'s':''} (${total} au total) ?`)) return;
+  let n = 0;
+  [...etiqSel].map(id=>db.arbres.find(a=>a.id===id)).filter(Boolean).forEach(a=>{
+    const avant = getSoinsPlanifies(a);
+    const apres = avant.filter(sp=>!cles.has((sp.type||'')+'|||'+(sp.date||'')));
+    if(apres.length===avant.length) return;
+    n += avant.length - apres.length;
+    a.soins_planifies = apres;
+    const next = apres.slice().sort((x,y)=>(x.date||'').localeCompare(y.date||''))[0];
+    a.prochain_soin = next?.date||'';
+    a.type_soin = next?.type||'';
+  });
+  delete window._mspEntries;
+  closeModal();
+  etiqSel.clear();
+  render();
+  autoSave();
+  afficherIndicateur(`🗑 ${n} travail${n>1?'x':''} planifié${n>1?'s':''} supprimé${n>1?'s':''}`);
 }
 
 // ── Coût selon la taille : outils communs ─────────────────────────────────────
