@@ -7552,21 +7552,45 @@ async function idbSupprimerPhoto(arbreId, photoId){
   });
 }
 
-async function idbToutesPhotos(){
-  const db = await ouvrirIDB();
-  return new Promise((resolve)=>{
-    const tx = db.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).getAll();
+// Lecture par lots : un seul getAll() de toutes les photos (plusieurs centaines de Mo)
+// échoue silencieusement sur iPhone, et l'app s'ouvrait alors sans aucune photo.
+async function idbParcourirPhotos(traiter, taille=40){
+  let apres = null, total = 0;
+  for(;;){
+    const lot = await _idbAvecRetry(db => new Promise((resolve, reject)=>{
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const plage = apres===null ? undefined : IDBKeyRange.lowerBound(apres, true);
+      const req = tx.objectStore(IDB_STORE).getAll(plage, taille);
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error || new Error('Lecture des photos impossible'));
+    }));
+    if(!lot.length) break;
+    for(const r of lot) await traiter(r);
+    total += lot.length;
+    apres = lot[lot.length-1].key;
+    if(lot.length < taille) break;
+    await new Promise(r=>setTimeout(r,0));
+  }
+  return total;
+}
+async function idbClesPhotos(){
+  return _idbAvecRetry(db => new Promise((resolve)=>{
+    const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAllKeys();
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => resolve([]);
-  });
+  }));
+}
+async function idbToutesPhotos(){
+  const out = [];
+  try{ await idbParcourirPhotos(r=>{ out.push(r); }); }
+  catch(e){ console.warn('idbToutesPhotos', e); }
+  return out;
 }
 
 async function idbSupprimerToutesPhotosArbre(arbreId){
   const db = await ouvrirIDB();
-  const toutes = await idbToutesPhotos();
   const prefix = `${arbreId}_`;
-  const aCle = toutes.filter(r=>r.key.startsWith(prefix)).map(r=>r.key);
+  const aCle = (await idbClesPhotos()).filter(k=>String(k).startsWith(prefix));
   return new Promise((resolve)=>{
     if(!aCle.length){ resolve(); return; }
     const tx = db.transaction(IDB_STORE, 'readwrite');
@@ -7866,49 +7890,18 @@ async function _importerDocumentsData(liste){
 }
 
 // Charge les dataUrl depuis IDB dans les objets photos en RAM (au démarrage ou après chargement JSON)
-async function chargerPhotosDepuisIDB(){
-  const toutes = await idbToutesPhotos();
-  const map = {};
-  toutes.forEach(r=>{ map[r.key] = r.dataUrl; });
-  db.arbres.forEach(a=>{
-    (a.photos||[]).forEach(p=>{
-      const key = _photoKey(a.id, p.id);
-      if(map[key]) p.dataUrl = map[key];
-    });
-  });
-  // Recharger aussi les photos de pots depuis IDB
-  db.pots.forEach(p=>{
-    (p.photos||[]).forEach(ph=>{
-      const key = 'pot_'+_photoKey(p.id, ph.id);
-      if(map[key]) ph.dataUrl = map[key];
-    });
-  });
-}
+async function chargerPhotosDepuisIDB(){ return chargerPhotosDepuisIDBProgressif(); }
 
-// Variante progressive : évite la map intermédiaire (qui double la mémoire des dataUrl)
-// et laisse respirer le navigateur entre chaque lot, pour ne pas créer un second pic
-// mémoire juste après celui du transfert initial vers IndexedDB.
+// Lecture progressive, lot par lot, sans copie intermédiaire de toutes les photos.
 async function chargerPhotosDepuisIDBProgressif(){
-  const toutes = await idbToutesPhotos();
-  const index = new Map();
-  for(const r of toutes) index.set(r.key, r);
-
-  for(let i=0;i<db.arbres.length;i++){
-    const a = db.arbres[i];
-    for(const p of (a.photos||[])){
-      const entry = index.get(_photoKey(a.id, p.id));
-      if(entry){ p.dataUrl = entry.dataUrl; }
-    }
-    if(i%20===0) await new Promise(r=>setTimeout(r,0));
-  }
-  // Recharger aussi les photos de pots
-  for(let i=0;i<db.pots.length;i++){
-    const p = db.pots[i];
-    for(const ph of (p.photos||[])){
-      const entry = index.get('pot_'+_photoKey(p.id, ph.id));
-      if(entry){ ph.dataUrl = entry.dataUrl; }
-    }
-    if(i%5===0) await new Promise(r=>setTimeout(r,0));
+  const cibles = new Map();
+  db.arbres.forEach(a=>(a.photos||[]).forEach(p=>cibles.set(_photoKey(a.id, p.id), p)));
+  (db.pots||[]).forEach(pt=>(pt.photos||[]).forEach(ph=>cibles.set('pot_'+_photoKey(pt.id, ph.id), ph)));
+  try{
+    await idbParcourirPhotos(r=>{ const p = cibles.get(r.key); if(p && r.dataUrl) p.dataUrl = r.dataUrl; });
+  } catch(e){
+    console.error('Chargement des photos', e);
+    afficherIndicateur('⚠️ Photos non chargées : '+(e.message||e)+' — rouvrez l\'app');
   }
 }
 
@@ -8058,8 +8051,7 @@ async function importerPhotosLots(input){
 // savoir précisément quels arbres ont encore des photos absentes de l'IndexedDB.
 async function diagnostiquerPhotos(){
   afficherIndicateur('⏳ Diagnostic des photos en cours…');
-  const toutes = await idbToutesPhotos();
-  const idbKeys = new Set(toutes.map(r=>r.key));
+  const idbKeys = new Set(await idbClesPhotos());
 
   // Estimation du stockage utilisé/disponible, et statut de persistance —
   // utile pour repérer un risque d'éviction avant qu'il ne cause une perte.
