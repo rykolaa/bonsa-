@@ -10694,6 +10694,33 @@ function _scanTrouve(texte){
   if(localStorage.getItem('scan_photo') !== 'non') setTimeout(()=>openPhotoModal(a.id), 250);
   return true;
 }
+// PC (souris, pas d'écran tactile principal) : webcam frontale, paysage, aperçu en miroir
+function _scanEstPC(){
+  try{ return window.matchMedia('(pointer:fine)').matches && !/iPhone|iPad|Android/i.test(navigator.userAgent); }catch(_){ return false; }
+}
+// Saisie au clavier (n° d'inventaire, nom, ou lecteur QR USB qui « tape » l'URL)
+function scannerSaisie(ev){
+  if(ev && ev.key && ev.key!=='Enter') return;
+  const inp = document.getElementById('scan-saisie'); if(!inp) return;
+  const t = inp.value.trim(); if(!t) return;
+  let a = _arbreDepuisQR(t);
+  if(!a){
+    const n = t.toLowerCase();
+    const c = db.arbres.filter(x=>!x.sortie && (x.nom||'').toLowerCase().includes(n));
+    if(c.length===1) a = c[0];
+    else {
+      const st = document.getElementById('scan-statut');
+      if(st) st.textContent = c.length ? `${c.length} arbres correspondent — précisez (n° d'inventaire ou nom complet).` : '⚠️ Aucun arbre ne correspond à « '+t.slice(0,40)+' ».';
+      return;
+    }
+  }
+  fermerScanner(); closeModal(); openDetail(a.id);
+}
+async function changerCameraScan(id){
+  try{ localStorage.setItem('scan_camera', id); }catch(_){}
+  fermerScanner();
+  ouvrirScanner();
+}
 // Secours : photo prise avec l'appareil photo natif de l'iPhone (meilleure mise au point)
 async function scannerDepuisPhoto(input){
   const f = input.files && input.files[0]; input.value = '';
@@ -10713,6 +10740,7 @@ async function scannerDepuisPhoto(input){
 }
 
 async function ouvrirScanner(){
+  const pc = _scanEstPC();
   const avecPhoto = localStorage.getItem('scan_photo') !== 'non';
   document.getElementById('modal').innerHTML = `
   <div class="modal-head">
@@ -10720,16 +10748,23 @@ async function ouvrirScanner(){
     <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
   </div>
   <div class="modal-body">
-    <div style="position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:3/4;max-height:55vh;margin:0 auto">
-      <video id="scan-video" playsinline muted autoplay style="width:100%;height:100%;object-fit:cover;display:block"></video>
-      <div style="position:absolute;inset:22% 18%;border:3px solid rgba(255,255,255,.9);border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35)"></div>
+    <div style="position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:${pc?'4/3':'3/4'};max-height:55vh;margin:0 auto">
+      <video id="scan-video" playsinline muted autoplay style="width:100%;height:100%;object-fit:${pc?'contain':'cover'};display:block${pc?';transform:scaleX(-1)':''}"></video>
+      <div style="position:absolute;inset:${pc?'20% 28%':'22% 18%'};border:3px solid rgba(255,255,255,.9);border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35)"></div>
       <div id="scan-zoom" style="position:absolute;bottom:8px;left:0;right:0;display:none;justify-content:center;gap:6px"></div>
     </div>
     <div id="scan-statut" style="text-align:center;font-size:13px;color:var(--stone);margin:10px 0 8px;min-height:18px">Démarrage de la caméra…</div>
-    <div style="font-size:11px;color:var(--stone);text-align:center;margin-bottom:10px">Tenez l'iPhone à 15–25 cm, l'étiquette dans le cadre. Si l'image reste floue, reculez un peu ou utilisez le bouton ci-dessous.</div>
+    <div id="scan-cams" style="display:none;margin-bottom:10px;text-align:center"></div>
+    <div style="font-size:11px;color:var(--stone);text-align:center;margin-bottom:10px">${pc
+      ? 'Présentez l\'étiquette face à la webcam, à 15–30 cm, bien éclairée et immobile. Si le QR reste flou (webcam à mise au point fixe), éloignez-la un peu ou tapez le n° ci-dessous.'
+      : 'Tenez l\'iPhone à 15–25 cm, l\'étiquette dans le cadre. Si l\'image reste floue, reculez un peu ou utilisez le bouton ci-dessous.'}</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="scan-saisie" class="input" placeholder="N° d'inventaire ou nom de l'arbre" onkeydown="scannerSaisie(event)" style="flex:1;padding:8px 10px;border:1px solid var(--moss-light,#ccc);border-radius:6px;font-size:13px">
+      <button class="btn" onclick="scannerSaisie()">Ouvrir</button>
+    </div>
     <label class="btn" style="display:block;text-align:center;cursor:pointer;padding:9px;margin-bottom:10px">
-      📸 Prendre une photo du QR
-      <input type="file" accept="image/*" capture="environment" style="display:none" onchange="scannerDepuisPhoto(this)">
+      ${pc?'🖼️ Lire le QR dans une image':'📸 Prendre une photo du QR'}
+      <input type="file" accept="image/*" ${pc?'':'capture="environment"'} style="display:none" onchange="scannerDepuisPhoto(this)">
     </label>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;justify-content:center">
       <input type="checkbox" ${avecPhoto?'checked':''} onchange="localStorage.setItem('scan_photo', this.checked?'oui':'non')">
@@ -10747,19 +10782,43 @@ async function ouvrirScanner(){
     if('BarcodeDetector' in window){
       try{ const f = await BarcodeDetector.getSupportedFormats(); if(f.includes('qr_code')) _scan.detector = new BarcodeDetector({formats:['qr_code']}); }catch(_){ _scan.detector = null; }
     }
-    _scan.stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}});
+    let camId = null; try{ camId = localStorage.getItem('scan_camera'); }catch(_){}
+    const contrainte = {width:{ideal:1920}, height:{ideal:1080}};
+    if(camId) contrainte.deviceId = {exact:camId}; else contrainte.facingMode = {ideal: pc?'user':'environment'};
+    try{ _scan.stream = await navigator.mediaDevices.getUserMedia({audio:false, video:contrainte}); }
+    catch(e1){
+      if(!camId || e1.name==='NotAllowedError' || e1.name==='SecurityError') throw e1;
+      try{ localStorage.removeItem('scan_camera'); }catch(_){}
+      _scan.stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{width:{ideal:1920}, height:{ideal:1080}}});
+    }
   }catch(e){
     fermerScanner();
+    const secours = pc ? 'tapez le n° de l\'arbre ci-dessous' : 'utilisez « 📸 Prendre une photo du QR »';
     if(e && (e.name==='NotAllowedError' || e.name==='SecurityError'))
-      statut('❌ Accès à la caméra refusé. Réglages → Safari → Caméra → « Autoriser ». En attendant : « 📸 Prendre une photo du QR ».');
-    else statut('❌ Caméra : '+(e.message||e.name||e)+' — utilisez « 📸 Prendre une photo du QR ».');
+      statut(pc ? '❌ Accès à la webcam refusé. Cliquez sur l\'icône 🔒/caméra à gauche de l\'adresse → Caméra → Autoriser, puis rouvrez le scanner. Vérifiez aussi Paramètres Windows → Confidentialité → Caméra.'
+                : '❌ Accès à la caméra refusé. Réglages → Safari → Caméra → « Autoriser ». En attendant : « 📸 Prendre une photo du QR ».');
+    else if(e && e.name==='NotFoundError') statut('❌ Aucune caméra détectée — '+secours+'.');
+    else if(e && e.name==='NotReadableError') statut('❌ La webcam est déjà utilisée par une autre application (Teams, Zoom…). Fermez-la puis réessayez — ou '+secours+'.');
+    else statut('❌ Caméra : '+(e.message||e.name||e)+' — '+secours+'.');
     return;
   }
+  // Plusieurs caméras (webcam intégrée + USB…) : menu de choix
+  try{
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+    const zc = document.getElementById('scan-cams');
+    if(cams.length > 1 && zc){
+      const actuelle = _scan.stream.getVideoTracks()[0].getSettings().deviceId;
+      zc.style.display = 'block';
+      zc.innerHTML = `<select onchange="changerCameraScan(this.value)" style="padding:5px 8px;border-radius:6px;font-size:13px;max-width:100%">`+
+        cams.map((c,i)=>`<option value="${esc(c.deviceId)}" ${c.deviceId===actuelle?'selected':''}>${esc(c.label||('Caméra '+(i+1)))}</option>`).join('')+`</select>`;
+    }
+  }catch(_){}
   const video = document.getElementById('scan-video');
   if(!video){ fermerScanner(); return; }
   video.srcObject = _scan.stream;
   try{ await video.play(); }catch(_){}
-  statut('Visez le QR code de l\'étiquette');
+  statut(pc ? 'Présentez le QR code de l\'étiquette à la webcam' : 'Visez le QR code de l\'étiquette');
+  if(pc){ const si = document.getElementById('scan-saisie'); if(si) si.focus(); }
 
   // Zoom (si l'appareil le permet) : permet de rester assez loin pour une image nette
   try{
