@@ -1241,7 +1241,36 @@ function appliquerFiltreAjout(){
 }
 function retirerFiltre(cat){ _filtres()[cat] = null; _majStateFilter(); window._garderFiltres = true; render(); }
 
+
+// Complète date_ajout des arbres créés avant que l'app l'enregistre.
+// 1) id ≥ 1,5e12 : l'id EST l'horodatage de création (_prochainId → Date.now()) → date exacte.
+// 2) sinon : estimation = plus ancienne photo de l'arbre, bornée par celles des arbres
+//    créés après lui (ids croissants = ordre de création). Marqué date_ajout_estimee.
+// Déterministe : chaque appareil calcule la même valeur, pas de conflit de synchro.
+function _completerDatesAjout(){
+  const tous = [...(db.arbres||[]), ...(db.arbres_sortis||[])];
+  if(!tous.some(a=>!a.date_ajout)) return;
+  const tsPhoto = a => {
+    let m = Infinity;
+    (a.photos||[]).forEach(p=>{ const r = String(p&&p.id||'').match(/1[5-9]\d{11}/); if(r) m = Math.min(m, Number(r[0])); });
+    return m;
+  };
+  const tri = tous.map(a=>({a, n:Number(a.id)||0})).sort((x,y)=>y.n-x.n);
+  let borne = Infinity, change = false;
+  for(const {a,n} of tri){
+    let t;
+    if(a.date_ajout) t = new Date(a.date_ajout+'T12:00').getTime();
+    else if(n > 1.5e12){ t = n; a.date_ajout = _isoJour(new Date(n)); change = true; }
+    else {
+      t = Math.min(tsPhoto(a), borne);
+      if(t < Infinity){ a.date_ajout = _isoJour(new Date(t)); a.date_ajout_estimee = true; change = true; }
+    }
+    if(t < borne) borne = t;
+  }
+  if(change){ try{ autoSave(); }catch(e){} }
+}
 function updateSidebar(){
+  _completerDatesAjout();
   const all = db.arbres;
   // Base de comptage d'une rubrique = arbres qui passent les AUTRES filtres actifs
   const base = cat => all.filter(a=>_fltPasse(a, cat));
@@ -1308,13 +1337,15 @@ function updateSidebar(){
   if(ajEl){
     const bAj = base('ajout');
     const nbSans = all.filter(a=>!a.date_ajout).length;
+    const nbEst = all.filter(a=>a.date_ajout_estimee).length;
     const cur = F.ajout && !/^ajout:\d+j$/.test(F.ajout) ? _ajoutBornes(F.ajout) : ['',''];
     ajEl.innerHTML = ['ajout:7j','ajout:30j'].map(k=>_fltBtn('ajout', k, _ajoutLibelle(k), bAj.filter(a=>_fltTest(a,'ajout',k)).length)).join('')
       + `<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 6px;align-items:center;padding:6px 10px 2px;font-size:12px;color:var(--stone)">
           <label for="ajout-du">Du</label><input type="date" id="ajout-du" value="${cur[0]}" onchange="appliquerFiltreAjout()" style="font-size:12px;padding:3px 4px;border:1px solid var(--border);border-radius:6px;min-width:0">
           <label for="ajout-au">Au</label><input type="date" id="ajout-au" value="${cur[1]}" onchange="appliquerFiltreAjout()" style="font-size:12px;padding:3px 4px;border:1px solid var(--border);border-radius:6px;min-width:0">
         </div>`
-      + (nbSans ? `<div style="font-size:11px;color:var(--stone);padding:4px 10px 2px;line-height:1.35">${nbSans} arbre${nbSans>1?'s':''} ajouté${nbSans>1?'s':''} avant cette fonction n'${nbSans>1?'ont':'a'} pas de date.</div>` : '');
+      + (nbSans ? `<div style="font-size:11px;color:var(--stone);padding:4px 10px 2px;line-height:1.35">${nbSans} arbre${nbSans>1?'s':''} sans date d'ajout.</div>` : '')
+      + (nbEst ? `<div style="font-size:11px;color:var(--stone);padding:2px 10px 2px;line-height:1.35">${nbEst} date${nbEst>1?'s':''} estimée${nbEst>1?'s':''} d'après les premières photos.</div>` : '');
   }
 
   // Résumé des filtres actifs (haut de la barre)
