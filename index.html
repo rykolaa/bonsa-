@@ -517,6 +517,13 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
           <div id="taille-filters"></div>
         </div>
       </div>
+      <!-- Date d'ajout -->
+      <div class="sidebar-section">
+        <div class="sidebar-sec-title" onclick="toggleAcc('ajout')">Date d'ajout <span class="acc-arrow" id="acc-arrow-ajout">▶</span></div>
+        <div class="sidebar-sec-body" id="acc-ajout">
+          <div id="ajout-filters"></div>
+        </div>
+      </div>
       <!-- Alertes -->
       <div class="sidebar-section">
         <div class="sidebar-sec-title" onclick="toggleAcc('alertes')">Alertes <span class="acc-arrow" id="acc-arrow-alertes">▶</span></div>
@@ -1084,7 +1091,7 @@ function majLatinField(){
 }
 
 let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], arbres_sortis:[], cultivars:[], travaux_types:[], collections_pots:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
-let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, completude:true, style:true, origine:true, espece:true, taille:false, alertes:false}};
+let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, completude:true, style:true, origine:true, espece:true, taille:false, ajout:false, alertes:false}};
 const etiqSel = new Set();
 
 function fmtDate(d){
@@ -1163,12 +1170,13 @@ function seedData(){
 // Une valeur au plus par rubrique (Style, Origine, Espèce, Taille, Complétude,
 // Alertes) ; les rubriques se combinent (ex. Érable Burger + Achat).
 // Re-cliquer un filtre actif le retire.
-const FLT_LIBS = {comp:'Complétude', style:'Style', origine:'Origine', espece:'Espèce', taille:'Taille', alerte:'Alerte'};
+const FLT_LIBS = {comp:'Complétude', style:'Style', origine:'Origine', espece:'Espèce', taille:'Taille', ajout:'Ajout', alerte:'Alerte'};
 function _filtres(){ if(!state.filtres) state.filtres = {}; return state.filtres; }
 function _fltCat(f){
   if(f==='urgent' || f==='sante-low') return 'alerte';
   if(f.startsWith('comp:')) return 'comp';
   if(f.startsWith('taille:')) return 'taille';
+  if(f.startsWith('ajout:')) return 'ajout';
   if(db.arbres.some(a=>a.espece===f)) return 'espece';
   if(db.arbres.some(a=>a.origine===f)) return 'origine';
   return 'style';
@@ -1180,6 +1188,7 @@ function _fltTest(a, cat, v){
       : a.sante<70;
     case 'comp': { const [lo,hi] = v.slice(5).split('-').map(Number); const p = completudeArbre(a).pct; return p>=lo && p<=hi; }
     case 'taille': { const h = HAUTEURS.find(x=>x.nom===v.slice(7)); return h ? a.hauteur>=h.min && a.hauteur<h.max : false; }
+    case 'ajout': { const [du,au] = _ajoutBornes(v); const d = a.date_ajout; return !!d && (!du || d>=du) && (!au || d<=au); }
     case 'style': return a.style===v;
     case 'origine': return a.origine===v;
     case 'espece': return a.espece===v;
@@ -1197,6 +1206,7 @@ function _fltLibelle(cat, v){
   if(cat==='alerte') return v==='urgent' ? '🔔 Soins urgents' : '⚠️ Santé < 70%';
   if(cat==='comp'){ const t = COMPL_TRANCHES.find(x=>x.cle===v); return t ? t.lib : v; }
   if(cat==='taille') return v.slice(7);
+  if(cat==='ajout') return _ajoutLibelle(v);
   if(cat==='espece') return getEmoji(v)+' '+v;
   return v;
 }
@@ -1204,6 +1214,30 @@ function _fltBtn(cat, v, label, n){
   const actif = fltActif(cat, v);
   const js = v.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
   return `<button class="flt ${actif?'active':''}" onclick="setFlt('${js}','${cat}')">${label} <span class="cnt">${actif?'✓ ':''}${n}</span></button>`;
+}
+
+// ── FILTRE DATE D'AJOUT ───────────────────────────────────────────────────────
+// Valeur : 'ajout:7j' / 'ajout:30j' (glissants) ou 'ajout:AAAA-MM-JJ..AAAA-MM-JJ'
+// (une borne peut être vide). Seuls les arbres ayant une date_ajout passent.
+function _isoJour(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().split('T')[0]; }
+function _ajoutBornes(v){
+  const x = v.slice(6);
+  const m = x.match(/^(\d+)j$/);
+  if(m){ const d = new Date(); d.setDate(d.getDate()-Number(m[1])+1); return [_isoJour(d), '']; }
+  const [du,au] = x.split('..'); return [du||'', au||''];
+}
+function _ajoutLibelle(v){
+  const x = v.slice(6), m = x.match(/^(\d+)j$/);
+  if(m) return `🆕 ${m[1]} derniers jours`;
+  const f = d => d ? new Date(d+'T12:00').toLocaleDateString('fr-CH') : '…';
+  const [du,au] = x.split('..');
+  return `🆕 Ajoutés ${du&&au?'du '+f(du)+' au '+f(au):du?'depuis le '+f(du):'jusqu\'au '+f(au)}`;
+}
+function appliquerFiltreAjout(){
+  const du = document.getElementById('ajout-du')?.value||'', au = document.getElementById('ajout-au')?.value||'';
+  const F = _filtres();
+  F.ajout = (du||au) ? 'ajout:'+du+'..'+au : null;
+  _majStateFilter(); window._garderFiltres = true; render();
 }
 function retirerFiltre(cat){ _filtres()[cat] = null; _majStateFilter(); window._garderFiltres = true; render(); }
 
@@ -1269,6 +1303,20 @@ function updateSidebar(){
     }).join('');
   }
 
+  // Date d'ajout
+  const ajEl = document.getElementById('ajout-filters');
+  if(ajEl){
+    const bAj = base('ajout');
+    const nbSans = all.filter(a=>!a.date_ajout).length;
+    const cur = F.ajout && !/^ajout:\d+j$/.test(F.ajout) ? _ajoutBornes(F.ajout) : ['',''];
+    ajEl.innerHTML = ['ajout:7j','ajout:30j'].map(k=>_fltBtn('ajout', k, _ajoutLibelle(k), bAj.filter(a=>_fltTest(a,'ajout',k)).length)).join('')
+      + `<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 6px;align-items:center;padding:6px 10px 2px;font-size:12px;color:var(--stone)">
+          <label for="ajout-du">Du</label><input type="date" id="ajout-du" value="${cur[0]}" onchange="appliquerFiltreAjout()" style="font-size:12px;padding:3px 4px;border:1px solid var(--border);border-radius:6px;min-width:0">
+          <label for="ajout-au">Au</label><input type="date" id="ajout-au" value="${cur[1]}" onchange="appliquerFiltreAjout()" style="font-size:12px;padding:3px 4px;border:1px solid var(--border);border-radius:6px;min-width:0">
+        </div>`
+      + (nbSans ? `<div style="font-size:11px;color:var(--stone);padding:4px 10px 2px;line-height:1.35">${nbSans} arbre${nbSans>1?'s':''} ajouté${nbSans>1?'s':''} avant cette fonction n'${nbSans>1?'ont':'a'} pas de date.</div>` : '');
+  }
+
   // Résumé des filtres actifs (haut de la barre)
   const res = document.getElementById('flt-resume');
   if(res){
@@ -1313,6 +1361,7 @@ function getFiltered(){
       case 'sante':  return a.sante - b.sante;
       case 'sante-': return b.sante - a.sante;
       case 'date':   return (b.date_acq||'').localeCompare(a.date_acq||'');
+      case 'ajout':  return (b.date_ajout||'').localeCompare(a.date_ajout||'') || (Number(b.id)||0)-(Number(a.id)||0);
       default:       return 0;
     }
   });
@@ -2039,6 +2088,7 @@ function renderCollection(c){
         <option value="sante"  ${state.sort==='sante' ?'selected':''}>📉 Santé ↑</option>
         <option value="sante-" ${state.sort==='sante-'?'selected':''}>📈 Santé ↓</option>
         <option value="date"   ${state.sort==='date'  ?'selected':''}>📅 Acquisition</option>
+        <option value="ajout"  ${state.sort==='ajout' ?'selected':''}>🆕 Derniers ajoutés</option>
         <option value="completude"  ${state.sort==='completude' ?'selected':''}>📋 Fiches les moins remplies</option>
         <option value="completude-" ${state.sort==='completude-'?'selected':''}>📋 Fiches les plus remplies</option>
       </select>
@@ -3883,7 +3933,7 @@ function saveArbre(id){
     closeModal();
     openDetail(id);
   } else {
-    data.id=_prochainId(db.arbres,'nextId');data.travaux=[];data.photos=[];data.sante_obs=[];data.valuations=[];data.mesures=[];
+    data.id=_prochainId(db.arbres,'nextId');data.date_ajout=_isoJour(new Date());data.travaux=[];data.photos=[];data.sante_obs=[];data.valuations=[];data.mesures=[];
     // Sauvegarder la mesure initiale
     const today = new Date().toISOString().split('T')[0];
     // Première mesure seulement si au moins une mensuration a été saisie
@@ -5145,6 +5195,7 @@ async function _doImport(toImport){
 
     db.arbres.push({
       id: newId,
+      date_ajout: _isoJour(new Date()),
       num: r.num||`YUG-${String(importCounter).padStart(3,'0')}`,
       nom: nomNum,
       espece: r.espece||getEspeces()[0].nom,
@@ -5312,7 +5363,7 @@ function toggleAcc(key){
 }
 
 function applyAcc(){
-  ['affichage','completude','style','origine','espece','taille','alertes'].forEach(key=>{
+  ['affichage','completude','style','origine','espece','taille','ajout','alertes'].forEach(key=>{
     const body  = document.getElementById('acc-'+key);
     const arrow = document.getElementById('acc-arrow-'+key);
     if(!body) return;
@@ -5321,7 +5372,7 @@ function applyAcc(){
     const isScroll = body.classList.contains('open-scroll');
     if(open){
       body.classList.add(isScroll ? 'open-scroll' : 'open');
-      body.style.maxHeight = isScroll ? '220px' : '600px';
+      body.style.maxHeight = isScroll ? (key==='espece' ? '440px' : '220px') : '600px';
     } else {
       body.style.maxHeight = '0';
     }
