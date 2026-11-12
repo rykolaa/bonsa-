@@ -10849,18 +10849,32 @@ async function ouvrirScanner(){
     <button class="btn btn-icon" style="border:none;font-size:20px" onclick="closeModal()">×</button>
   </div>
   <div class="modal-body">
-    <div style="position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:${pc?'4/3':'3/4'};max-height:55vh;margin:0 auto">
+    <div style="position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:${pc?'4/3':'3/4'};max-height:${pc?'42vh':'55vh'};margin:0 auto">
       <video id="scan-video" playsinline muted autoplay style="width:100%;height:100%;object-fit:${pc?'contain':'cover'};display:block${pc?';transform:scaleX(-1)':''}"></video>
       <div style="position:absolute;inset:${pc?'20% 28%':'22% 18%'};border:3px solid rgba(255,255,255,.9);border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35)"></div>
       <div id="scan-zoom" style="position:absolute;bottom:8px;left:0;right:0;display:none;justify-content:center;gap:6px"></div>
-      ${pc?`<div style="position:absolute;right:8px;bottom:8px;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 2px #000">
-        <canvas id="scan-loupe" width="150" height="150" style="display:block;width:120px;height:120px;border:2px solid #fff;border-radius:8px;background:#222;image-rendering:pixelated"></canvas>loupe : doit être net</div>`:''}
     </div>
+    ${pc?`<div style="display:flex;gap:12px;align-items:stretch;margin-top:10px">
+      <canvas id="scan-loupe" width="240" height="240" style="flex:0 0 auto;width:200px;height:200px;border:2px solid var(--moss-mid,#555);border-radius:8px;background:#222;image-rendering:pixelated"></canvas>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:8px;font-size:12px;color:var(--ink)">
+        <div><b>Loupe</b> — centre du cadre agrandi.<br><span style="color:var(--stone)">Les petits carrés du QR doivent avoir des bords francs.</span></div>
+        <div style="display:flex;gap:4px;align-items:center">Grossissement :
+          ${[2,3,4,6].map(z=>`<button class="btn scan-gz" data-z="${z}" onclick="_scan.zoomLoupe=${z};document.querySelectorAll('.scan-gz').forEach(b=>b.style.fontWeight=b.dataset.z==${z}?'700':'400')" style="padding:2px 8px;font-size:12px;font-weight:${z===3?'700':'400'}">×${z}</button>`).join('')}
+        </div>
+        <div>Netteté : <b id="scan-net-val">–</b> <span id="scan-net-txt" style="color:var(--stone)"></span>
+          <div style="height:10px;background:#ddd;border-radius:5px;overflow:hidden;margin-top:4px;position:relative">
+            <div id="scan-net-bar" style="height:100%;width:0;background:#b42814;transition:width .15s"></div>
+            <div id="scan-net-max" style="position:absolute;top:0;bottom:0;width:2px;background:#1a1a18;left:0"></div>
+          </div>
+          <div style="font-size:10px;color:var(--stone);margin-top:3px">Avancez/reculez lentement l'étiquette pour faire monter la barre (le trait noir = meilleur score atteint).</div>
+        </div>
+      </div>
+    </div>`:''}
     <div id="scan-statut" style="text-align:center;font-size:13px;color:var(--stone);margin:10px 0 8px;min-height:18px">Démarrage de la caméra…</div>
     <div id="scan-cams" style="display:none;margin-bottom:10px;text-align:center"></div>
     <div id="scan-diag" style="font-size:10px;color:var(--stone);text-align:center;margin:-4px 0 8px;opacity:.8"></div>
     <div style="font-size:11px;color:var(--stone);text-align:center;margin-bottom:10px">${pc
-      ? 'Webcam à mise au point fixe (Logitech C270, webcam d\'écran…) : tenez l\'étiquette <b>à 35–45 cm</b>, pas plus près — de près elle est floue. Bien éclairée, immobile, le QR au centre. Regardez la loupe : les petits carrés doivent être nets. Sinon, tapez le n° ci-dessous.'
+      ? '<b>Webcam à mise au point fixe (Logitech C270…)</b> : sortez l\'étiquette de sa pochette plastique (reflets), éclairez-la de face (dos à la fenêtre, pas en contre-jour), QR au centre du cadre. Trouvez la distance où la barre de netteté est la plus haute (souvent 30–40 cm) et tenez immobile. Sinon, tapez le n° ci-dessous.'
       : 'Tenez l\'iPhone à 15–25 cm, l\'étiquette dans le cadre. Si l\'image reste floue, reculez un peu ou utilisez le bouton ci-dessous.'}</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <input id="scan-saisie" class="input" placeholder="N° d'inventaire ou nom de l'arbre" onkeydown="scannerSaisie(event)" style="flex:1;padding:8px 10px;border:1px solid var(--moss-light,#ccc);border-radius:6px;font-size:13px">
@@ -10948,6 +10962,23 @@ async function ouvrirScanner(){
   _scan.nb = 0;
   const camLabel = (_scan.stream.getVideoTracks()[0]||{}).label || 'caméra';
   const loupe = document.getElementById('scan-loupe'), lctx = loupe && loupe.getContext('2d');
+  _scan.zoomLoupe = 3; _scan.netMax = 0;
+  const netCanvas = document.createElement('canvas'), netCtx = netCanvas.getContext('2d', {willReadFrequently:true});
+  // Netteté du centre : gradient fort (97e centile) rapporté au contraste → indépendant de l'éclairage
+  const mesurerNettete = (v)=>{
+    const c = 90, sx = Math.round((v.videoWidth-c)/2), sy = Math.round((v.videoHeight-c)/2);
+    netCanvas.width = c; netCanvas.height = c;
+    netCtx.drawImage(v, sx, sy, c, c, 0, 0, c, c);
+    const d = netCtx.getImageData(0,0,c,c).data, g = new Float32Array(c*c);
+    for(let k=0;k<c*c;k++) g[k] = (d[4*k]+d[4*k+1]+d[4*k+2])/3;
+    const tri = Float32Array.from(g).sort(), plage = tri[Math.floor(c*c*0.95)] - tri[Math.floor(c*c*0.05)] + 1;
+    _scan.contraste = plage;
+    if(plage < 12) return 0;   // rien au centre
+    const gr = [];
+    for(let y=0;y<c-1;y++) for(let x=0;x<c-1;x++){ const k=y*c+x; gr.push(Math.abs(g[k+1]-g[k])+Math.abs(g[k+c]-g[k])); }
+    gr.sort((a,b)=>a-b);
+    return Math.min(100, Math.round(100*gr[Math.floor(gr.length*0.97)]/plage));
+  };
   const boucle = async ()=>{
     const v = document.getElementById('scan-video');
     if(!v || !_scan.stream){ fermerScanner(); return; }
@@ -10963,9 +10994,20 @@ async function ouvrirScanner(){
         if(!texte && v.videoWidth){
           texte = _qrDecoder(v, v.videoWidth, v.videoHeight, ESSAIS[_scan.tour++ % ESSAIS.length]);
           _scan.nb++;
-          if(lctx){ const c = Math.min(v.videoWidth, v.videoHeight)*0.28; lctx.imageSmoothingEnabled = false;
-            lctx.save(); lctx.translate(150,0); lctx.scale(-1,1);
-            lctx.drawImage(v, (v.videoWidth-c)/2, (v.videoHeight-c)/2, c, c, 0, 0, 150, 150); lctx.restore(); }
+          if(lctx){ const c = Math.round(240/(_scan.zoomLoupe||3)); lctx.imageSmoothingEnabled = false;
+            lctx.save(); lctx.translate(240,0); lctx.scale(-1,1);
+            lctx.drawImage(v, Math.round((v.videoWidth-c)/2), Math.round((v.videoHeight-c)/2), c, c, 0, 0, 240, 240); lctx.restore();
+            try{
+              const n = mesurerNettete(v); _scan.netMax = Math.max(_scan.netMax, n);
+              const coul = n>=60?'#2d7a27':n>=40?'#d08a00':'#b42814';
+              const faible = n>0 && _scan.contraste < 70;
+              const txt = (n===0?'rien au centre du cadre':n>=60?'net ✓':n>=40?'limite':'flou')
+                + (faible?' · contraste faible : reflet, pochette plastique ou contre-jour ?':'');
+              const bv=document.getElementById('scan-net-val'), bt=document.getElementById('scan-net-txt'), bb=document.getElementById('scan-net-bar'), bm=document.getElementById('scan-net-max');
+              if(bv) bv.textContent = n||'–'; if(bt){ bt.textContent = txt; bt.style.color = n?coul:''; }
+              if(bb){ bb.style.width = n+'%'; bb.style.background = coul; } if(bm) bm.style.left = _scan.netMax+'%';
+            }catch(_){}
+          }
           if(_scan.nb % 10 === 1){ const dg = document.getElementById('scan-diag');
             if(dg) dg.textContent = `${camLabel} · ${v.videoWidth}×${v.videoHeight} · ${_scan.nb} images analysées`; }
         }
