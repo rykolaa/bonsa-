@@ -5424,6 +5424,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
 function toggleAcc(key){
   state.acc[key] = !state.acc[key];
   applyAcc();
+  if(state.acc[key]) setTimeout(()=>_centrerSectionSidebar(key), 230); // après l'animation d'ouverture
+}
+// Fait défiler le menu de gauche pour que la section ouverte soit centrée dans l'espace visible
+// (si elle est plus haute que l'écran, son titre est calé en haut).
+function _centrerSectionSidebar(key){
+  const sb = document.getElementById('sidebar');
+  const sec = document.getElementById('acc-'+key)?.closest('.sidebar-section');
+  if(!sb || !sec) return;
+  const sbR = sb.getBoundingClientRect(), secR = sec.getBoundingClientRect();
+  const haut = secR.top - sbR.top + sb.scrollTop;   // position de la section dans le menu
+  const marge = Math.max(0, (sb.clientHeight - secR.height) / 2);
+  sb.scrollTo({top: Math.max(0, haut - marge), behavior:'smooth'});
 }
 
 function applyAcc(){
