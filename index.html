@@ -1459,6 +1459,15 @@ function badgeCompletude(a){
       <span style="color:var(--stone)">📋 Fiche</span><span style="font-weight:700;color:${couleurCompletude(c.pct)}">${c.pct} %</span>
     </div>${barreCompletude(c.pct, 5)}</div>`;
 }
+function badgeSante(a){
+  const v = Number(a.sante);
+  if(a.sante==null || a.sante==='' || isNaN(v)) return '';
+  const p = Math.max(0, Math.min(100, v));
+  return `<div title="Santé ${p} %" style="margin-top:7px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:10.5px;margin-bottom:3px">
+      <span style="color:var(--stone)">${p>=85?'♥':'⚠️'} Santé</span><span style="font-weight:700;color:${santeColor(p)}">${p} %</span>
+    </div>${barreCompletude(p, 5)}</div>`;
+}
 function blocCompletudeDetail(a){
   const c = completudeArbre(a);
   return `<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:12px">
@@ -2152,9 +2161,8 @@ function renderCollection(c){
           <div class="card-meta">
             <span class="tag tag-origine">${a.origine}</span>
             ${days!==null&&days<=14?`<span class="tag tag-alert">🔔 J-${days}</span>`:''}
-            ${a.sante>=85?`<span class="tag tag-sante">♥ ${a.sante}%</span>`:`<span class="tag tag-alert">⚠️ ${a.sante}%</span>`}
           </div>
-          ${badgeCompletude(a)}
+          ${badgeSante(a)}
         </div>
       </div>`;
     }).join('')+`</div>`;
