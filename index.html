@@ -90,6 +90,9 @@ body{font-family:var(--ff-body);background:var(--parchment);color:var(--ink);fon
 .cal-plus,.cal-fait{font-size:9.5px;color:var(--stone)}
 .cal-fait{color:var(--moss)}
 @media(max-width:700px){ .cal-case{min-height:46px} .cal-it span{display:none} }
+.btn-haut{position:fixed;right:28px;bottom:28px;z-index:140;width:46px;height:46px;border-radius:50%;border:none;background:var(--moss);color:#fff;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.25);cursor:pointer;opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .2s,transform .2s}
+.btn-haut.show{opacity:.9;pointer-events:auto;transform:none}.btn-haut:hover{opacity:1}
+@media(max-width:700px){.btn-haut{right:18px;bottom:24px}}
 .sidebar-toggle-fab{display:none;position:fixed;bottom:24px;left:24px;z-index:150;background:var(--moss);color:#fff;border:none;border-radius:50%;width:52px;height:52px;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.25);cursor:pointer;align-items:center;justify-content:center}
 .sidebar-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:140}
 .sidebar-backdrop.show{display:block}
@@ -541,6 +544,7 @@ var LZString=(function(){var f=String.fromCharCode;var keyStrBase64="ABCDEFGHIJK
     <div class="content" id="content"></div>
   </div>
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarMobile()"></div>
+  <button class="btn-haut" id="btn-haut" onclick="allerEnHaut()" title="Haut de page">↑</button>
   <button class="sidebar-toggle-fab" id="sidebar-toggle-fab" onclick="toggleSidebarMobile()" title="Filtres">🔍</button>
 </div>
 
@@ -1092,7 +1096,7 @@ function majLatinField(){
 }
 
 let db = {arbres:[], pots:[], substrats:[], melanges:[], rempotages:[], engrais:[], produits:[], especes:[], especesSupprimees:[], arbres_sortis:[], cultivars:[], travaux_types:[], collections_pots:[], nextId:1, nextPotId:1, nextSubId:1, nextMelId:1, nextRempId:1, nextEngId:1, nextProdId:1};
-let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, completude:true, style:true, origine:true, espece:true, taille:false, ajout:false, alertes:false}};
+let state = {page:'collection', filter:'all', disp:'grid', selectedId:null, sort:'nom', acc:{affichage:false, completude:false, style:true, origine:false, espece:false, taille:false, ajout:false, alertes:false}};
 const etiqSel = new Set();
 
 function fmtDate(d){
@@ -5399,6 +5403,23 @@ function setDisp(d){
 }
 
 function setSort(s){ state.sort=s; render(); }
+
+// Bouton « Haut de page » : apparaît après ~400 px de défilement de la zone principale
+function allerEnHaut(){
+  const c = document.getElementById('content');
+  if(c) c.scrollTo({top:0, behavior:'smooth'});
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function _majBtnHaut(){
+  const c = document.getElementById('content'), b = document.getElementById('btn-haut');
+  if(!b) return;
+  const y = Math.max(c?c.scrollTop:0, window.scrollY||0);
+  b.classList.toggle('show', y > 400);
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('content')?.addEventListener('scroll', _majBtnHaut, {passive:true});
+  window.addEventListener('scroll', _majBtnHaut, {passive:true});
+});
 
 function toggleAcc(key){
   state.acc[key] = !state.acc[key];
