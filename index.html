@@ -2124,6 +2124,7 @@ function renderCollection(c){
       ${etiqSel.size>0?`<button onclick="ouvrirSoinGroupe()" style="font-size:12px;padding:4px 12px;background:var(--moss);color:#fff;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">✅ Soin groupé <strong>(${etiqSel.size})</strong></button>`:''}
       ${etiqSel.size>0?`<button onclick="ouvrirValidationEnMasseDepuisCollection()" style="font-size:12px;padding:4px 12px;background:#7a4ca0;color:#fff;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">📅 Valider soin planifié <strong>(${etiqSel.size})</strong></button>`:''}
       ${etiqSel.size>0?`<button onclick="imprimerFichePDF([...etiqSel])" style="font-size:12px;padding:4px 12px;background:#e8f0ff;color:#1a4fa5;border:1px solid #b0c8f0;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px">📄 PDF <strong>(${etiqSel.size})</strong></button>`:''}
+      <span style="font-size:12px;color:var(--stone);white-space:nowrap">Trier par</span>
       <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
         <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
         <option value="nom"    ${state.sort==='nom'   ?'selected':''}>🔤 Nom A→Z</option>
