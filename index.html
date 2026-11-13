@@ -1383,14 +1383,16 @@ function getFiltered(){
   });
   // Tri
   const _comp = (state.sort==='completude'||state.sort==='completude-') ? new Map(arr.map(a=>[a.id, completudeArbre(a).pct])) : null;
+  // Santé numérique ; un arbre sans santé renseignée passe toujours en fin de liste
+  const _sv = a => { const v = Number(a.sante); return (a.sante==null||a.sante===''||isNaN(v)) ? (state.sort==='sante'?999:-999) : v; };
   arr.sort((a,b)=>{
     switch(state.sort){
       case 'completude':  return (_comp.get(a.id)-_comp.get(b.id)) || a.nom.localeCompare(b.nom,'fr');
       case 'completude-': return (_comp.get(b.id)-_comp.get(a.id)) || a.nom.localeCompare(b.nom,'fr');
       case 'num':    return a.num.localeCompare(b.num, undefined, {numeric:true, sensitivity:'base'});
       case 'nom':    return a.nom.localeCompare(b.nom, 'fr');
-      case 'sante':  return a.sante - b.sante;
-      case 'sante-': return b.sante - a.sante;
+      case 'sante':  return (_sv(a)-_sv(b)) || a.nom.localeCompare(b.nom,'fr');
+      case 'sante-': return (_sv(b)-_sv(a)) || a.nom.localeCompare(b.nom,'fr');
       case 'date':   return (b.date_acq||'').localeCompare(a.date_acq||'');
       case 'ajout':  return (b.date_ajout||'').localeCompare(a.date_ajout||'') || (Number(b.id)||0)-(Number(a.id)||0);
       default:       return 0;
@@ -2125,8 +2127,8 @@ function renderCollection(c){
       <select class="sort-sel" onchange="setSort(this.value)" title="Trier par">
         <option value="num"    ${state.sort==='num'   ?'selected':''}>🔢 Numéro</option>
         <option value="nom"    ${state.sort==='nom'   ?'selected':''}>🔤 Nom A→Z</option>
-        <option value="sante"  ${state.sort==='sante' ?'selected':''}>📉 Santé ↑</option>
-        <option value="sante-" ${state.sort==='sante-'?'selected':''}>📈 Santé ↓</option>
+        <option value="sante"  ${state.sort==='sante' ?'selected':''}>📉 Santé : moins bonne d'abord</option>
+        <option value="sante-" ${state.sort==='sante-'?'selected':''}>📈 Santé : meilleure d'abord</option>
         <option value="date"   ${state.sort==='date'  ?'selected':''}>📅 Acquisition</option>
         <option value="ajout"  ${state.sort==='ajout' ?'selected':''}>🆕 Derniers ajoutés</option>
         <option value="completude"  ${state.sort==='completude' ?'selected':''}>📋 Fiches les moins remplies</option>
