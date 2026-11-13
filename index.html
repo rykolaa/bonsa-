@@ -1286,7 +1286,7 @@ function updateSidebar(){
   document.getElementById('flt-sante-low')?.classList.toggle('active', fltActif('alerte','sante-low'));
 
   const bSt = base('style');
-  const styles = [...new Set(all.map(a=>a.style))].filter(s=>s&&!/^Choisir/i.test(s)&&!/Diam[èe]tre/i.test(s)&&s.length<60).sort();
+  const styles = [...new Set(all.map(a=>a.style))].filter(s=>s&&!/^Choisir/i.test(s)&&!/Diam[èe]tre/i.test(s)&&s.length<60).sort((a,b)=>a.localeCompare(b,"fr",{sensitivity:"base"}));
   document.getElementById('style-filters').innerHTML = styles.map(s=>{
     const n = bSt.filter(a=>a.style===s).length;
     if(!n && !fltActif('style',s)) return '';
@@ -1295,14 +1295,14 @@ function updateSidebar(){
   }).join('');
 
   const bOr = base('origine');
-  const origines = [...new Set(all.map(a=>a.origine))].filter(Boolean).sort();
+  const origines = [...new Set(all.map(a=>a.origine))].filter(Boolean).sort((a,b)=>a.localeCompare(b,"fr",{sensitivity:"base"}));
   document.getElementById('origine-filters').innerHTML = origines.map(o=>{
     const n = bOr.filter(a=>a.origine===o).length;
     return (n || fltActif('origine',o)) ? _fltBtn('origine', o, o, n) : '';
   }).join('');
 
   const bEs = base('espece');
-  const especes = [...new Set(all.map(a=>a.espece))].filter(Boolean).sort();
+  const especes = [...new Set(all.map(a=>a.espece))].filter(Boolean).sort((a,b)=>a.localeCompare(b,"fr",{sensitivity:"base"}));
   document.getElementById('espece-filters').innerHTML = especes.map(e=>{
     const n = bEs.filter(a=>a.espece===e).length;
     return (n || fltActif('espece',e)) ? _fltBtn('espece', e, `${getEmoji(e)} ${e.length>18?e.substring(0,18)+'…':e}`, n) : '';
